@@ -39,14 +39,6 @@
         <span class="block-title">扫码入库</span>
       </div>
       <div class="scan-row">
-        <el-input ref="scanInputRef" v-model="scanCode"
-          placeholder="输入条码号，或使用右侧按钮扫码/上传"
-          size="large" clearable @keyup.enter="handleScanInbound"
-          :loading="scanLoading" class="scan-input">
-          <template #prefix>
-            <el-icon :size="18"><Search /></el-icon>
-          </template>
-        </el-input>
         <el-button size="large" @click="scannerRef?.openCamera()">
           <el-icon :size="18"><Camera /></el-icon>
           <span>摄像头扫码</span>
@@ -57,10 +49,6 @@
         </el-button>
       </div>
       <div v-if="scanResult" class="scan-result">
-        <div class="qr-row">
-          <span class="qr-label">条码</span>
-          <span class="qr-value">{{ scanResult.barcode }}</span>
-        </div>
         <div class="qr-row">
           <span class="qr-label">物料号</span>
           <span class="qr-value">{{ scanResult.materialCode }}</span>
@@ -180,12 +168,12 @@
 /**
  * 智能看板 — 统计概览 + 库存水位 + AI 速查 + 扫码入库。
  */
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { getStockReport } from '@/api/stock'
 import { getLatestReport, triggerPredict } from '@/api/ai'
 import { scanInbound } from '@/api/inbound'
 import { ElMessage } from 'element-plus'
-import { Search, WarningFilled, Camera, Upload } from '@element-plus/icons-vue'
+import { WarningFilled, Camera, Upload } from '@element-plus/icons-vue'
 import BarcodeScanner from '@/components/BarcodeScanner.vue'
 
 // 统计
@@ -211,24 +199,27 @@ const quickResult = ref(null)
 const quickSearched = ref(false)
 
 // ==================== 扫码入库 ====================
-const scanInputRef = ref(null)
-const scanCode = ref('')
 const scanLoading = ref(false)
 const scanResult = ref(null)
 const scanError = ref('')
 const scannerRef = ref(null)
 
-function onBarcodeScanned(code) {
-  scanCode.value = code
-  nextTick(() => handleScanInbound())
+async function onBarcodeScanned(code) {
+  scanLoading.value = true
+  scanResult.value = null
+  scanError.value = ''
+  try {
+    const data = await scanInbound({ barcode: code })
+    scanResult.value = data
+    ElMessage.success(`入库成功：${data.materialCode}`)
+    loadData()
+  } catch (err) {
+    scanError.value = err.message || '入库失败'
+  } finally { scanLoading.value = false }
 }
 
 onMounted(() => {
   loadData()
-  // 自动聚焦扫码输入框
-  nextTick(() => {
-    setTimeout(() => scanInputRef.value?.focus(), 600)
-  })
 })
 
 async function loadData() {
@@ -261,33 +252,6 @@ async function handleTriggerPredict() {
     ElMessage.success('AI 预测任务已启动，请稍后刷新查看')
   } catch {
     ElMessage.error('启动失败')
-  }
-}
-
-// ==================== 扫码入库 ====================
-async function handleScanInbound() {
-  if (!scanCode.value.trim()) return
-  scanLoading.value = true
-  scanResult.value = null
-  scanError.value = ''
-  try {
-    const data = await scanInbound({ barcode: scanCode.value.trim() })
-    scanResult.value = data
-    scanCode.value = ''
-    ElMessage.success(`条码 ${data.barcode} 入库成功`)
-    // 入库后刷新库存数据
-    loadData()
-  } catch (err) {
-    scanError.value = err.message || '扫码入库失败'
-    setTimeout(() => {
-      scanError.value = ''
-      scanCode.value = ''
-      scanInputRef.value?.focus()
-    }, 3000)
-  } finally {
-    scanLoading.value = false
-    // 重新聚焦输入框以接收下一次扫码
-    nextTick(() => scanInputRef.value?.focus())
   }
 }
 
@@ -389,10 +353,9 @@ function riskLabel(v) {
 .scan-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
 }
-.scan-input { flex: 1; min-width: 280px; }
 .scan-result {
   margin-top: 12px;
   padding: 12px;
