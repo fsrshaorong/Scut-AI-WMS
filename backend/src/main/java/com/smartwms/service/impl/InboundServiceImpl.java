@@ -10,7 +10,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartwms.common.BusinessException;
 import com.smartwms.common.ErrorCode;
+import com.smartwms.dto.ConfirmInboundRequest;
 import com.smartwms.dto.InboundOrderRequest;
+import com.smartwms.dto.InboundOrderVO;
 import com.smartwms.entity.*;
 import com.smartwms.mapper.*;
 import com.smartwms.service.InboundService;
@@ -19,6 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class InboundServiceImpl implements InboundService {
@@ -78,6 +83,19 @@ public class InboundServiceImpl implements InboundService {
     }
 
     @Override
+    public InboundOrderVO getById(Long id) {
+        InboundOrder order = inboundOrderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "入库单不存在");
+        }
+        List<InboundDetail> details = inboundDetailMapper.selectList(
+                new LambdaQueryWrapper<InboundDetail>()
+                        .eq(InboundDetail::getInboundId, id)
+        );
+        return InboundOrderVO.from(order, details);
+    }
+
+    @Override
     public Page<InboundOrder> page(int current, int size) {
         Page<InboundOrder> page = new Page<>(current, size);
         LambdaQueryWrapper<InboundOrder> wrapper = new LambdaQueryWrapper<>();
@@ -87,7 +105,7 @@ public class InboundServiceImpl implements InboundService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void confirm(Long inboundId) {
+    public void confirm(Long inboundId, ConfirmInboundRequest request) {
         InboundOrder order = inboundOrderMapper.selectById(inboundId);
         if (order == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "入库单不存在");
@@ -96,13 +114,29 @@ public class InboundServiceImpl implements InboundService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "该入库单已完成核销");
         }
 
-        // 更新所有明细的实际入库数为计划数（桩实现：默认全部到货）
+        // 查询该入库单的所有明细行
         var details = inboundDetailMapper.selectList(
                 new LambdaQueryWrapper<InboundDetail>()
                         .eq(InboundDetail::getInboundId, inboundId)
         );
+
+        // 若前端传入了明细行实际数量，则按 materialCode 匹配更新；否则默认按计划数全量入库
+        Map<String, Integer> actualQtyMap = null;
+        if (request != null && request.getDetails() != null && !request.getDetails().isEmpty()) {
+            actualQtyMap = request.getDetails().stream()
+                    .collect(Collectors.toMap(
+                            ConfirmInboundRequest.ConfirmDetailItem::getMaterialCode,
+                            ConfirmInboundRequest.ConfirmDetailItem::getActualQty,
+                            (a, b) -> a
+                    ));
+        }
+
         for (InboundDetail detail : details) {
-            detail.setActualQty(detail.getPlanQty());
+            // 确定实际入库数：优先取前端传入值，否则取计划数
+            int actualQty = (actualQtyMap != null && actualQtyMap.containsKey(detail.getMaterialCode()))
+                    ? actualQtyMap.get(detail.getMaterialCode())
+                    : detail.getPlanQty();
+            detail.setActualQty(actualQty);
             inboundDetailMapper.updateById(detail);
 
             // 更新条码状态为 "在库"
@@ -123,7 +157,7 @@ public class InboundServiceImpl implements InboundService {
             );
             if (inv != null) {
                 int oldQty = inv.getStockQty();
-                inv.setStockQty(oldQty + detail.getActualQty());
+                inv.setStockQty(oldQty + actualQty);
                 inventoryMapper.updateById(inv);
             }
         }

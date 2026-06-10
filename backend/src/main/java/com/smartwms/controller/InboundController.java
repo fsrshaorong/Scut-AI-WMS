@@ -8,7 +8,9 @@ package com.smartwms.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartwms.common.Result;
+import com.smartwms.dto.ConfirmInboundRequest;
 import com.smartwms.dto.InboundOrderRequest;
+import com.smartwms.dto.InboundOrderVO;
 import com.smartwms.entity.InboundOrder;
 import com.smartwms.service.InboundService;
 import jakarta.validation.Valid;
@@ -36,6 +38,15 @@ public class InboundController {
     }
 
     /**
+     * 查询入库单详情（含明细行）。
+     * GET /api/inbound/orders/{id}
+     */
+    @GetMapping("/orders/{id}")
+    public Result<InboundOrderVO> getById(@PathVariable Long id) {
+        return Result.success(inboundService.getById(id));
+    }
+
+    /**
      * 新建入库单。
      * POST /api/inbound/orders
      */
@@ -46,12 +57,14 @@ public class InboundController {
     }
 
     /**
-     * 手工确认入库。
+     * 手工确认入库，支持按明细行传入实际到货数量。
      * PUT /api/inbound/orders/{id}/confirm
+     * 请求体可选：不传或传空 details 时默认按计划数全量入库。
      */
     @PutMapping("/orders/{id}/confirm")
-    public Result<Void> confirm(@PathVariable Long id) {
-        inboundService.confirm(id);
+    public Result<Void> confirm(@PathVariable Long id,
+                                @RequestBody(required = false) ConfirmInboundRequest request) {
+        inboundService.confirm(id, request);
         return Result.success("入库确认成功", null);
     }
 }

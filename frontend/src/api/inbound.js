@@ -21,8 +21,17 @@ export function getInboundOrders(params) {
 }
 
 /**
- * 手工确认入库。
+ * 查询入库单详情（含明细行）。
  */
-export function confirmInbound(id) {
-  return request.put(`/inbound/orders/${id}/confirm`)
+export function getInboundDetail(id) {
+  return request.get(`/inbound/orders/${id}`)
+}
+
+/**
+ * 手工确认入库（支持按明细行传入实际到货数量）。
+ * @param {number} id 入库单主键 ID
+ * @param {Array} details [{ materialCode, actualQty }, ...] 可选，不传则按计划数全量入库
+ */
+export function confirmInbound(id, details) {
+  return request.put(`/inbound/orders/${id}/confirm`, details ? { details } : {})
 }
