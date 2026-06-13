@@ -24,14 +24,15 @@ public class MaterialController {
 
     /**
      * 分页查询物料列表。
-     * GET /api/materials?page=1&size=10&keyword=
+     * GET /api/materials?page=1&size=10&keyword=&supplierCode=
      */
     @GetMapping
     public Result<Page<Material>> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String keyword) {
-        return Result.success(materialService.page(page, size, keyword));
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String supplierCode) {
+        return Result.success(materialService.page(page, size, keyword, supplierCode));
     }
 
     /**

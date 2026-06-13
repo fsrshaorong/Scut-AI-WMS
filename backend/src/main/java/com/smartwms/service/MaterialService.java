@@ -12,9 +12,9 @@ import com.smartwms.entity.Material;
 public interface MaterialService {
 
     /**
-     * 分页查询物料列表。
+     * 分页查询物料列表（可按供应商筛选）。
      */
-    Page<Material> page(int current, int size, String keyword);
+    Page<Material> page(int current, int size, String keyword, String supplierCode);
 
     /**
      * 按 ID 查询物料。

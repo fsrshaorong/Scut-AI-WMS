@@ -34,13 +34,19 @@ public class MaterialServiceImpl implements MaterialService {
     }
 
     @Override
-    public Page<Material> page(int current, int size, String keyword) {
+    public Page<Material> page(int current, int size, String keyword, String supplierCode) {
         Page<Material> page = new Page<>(current, size);
         LambdaQueryWrapper<Material> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(keyword)) {
-            wrapper.like(Material::getMaterialCode, keyword)
-                   .or()
-                   .like(Material::getMaterialName, keyword);
+            wrapper.and(w -> w
+                .like(Material::getMaterialCode, keyword)
+                .or()
+                .like(Material::getMaterialName, keyword)
+            );
+        }
+        // 按供应商编码精确筛选（入库单新建时物料必须属于所选供应商）
+        if (StringUtils.hasText(supplierCode)) {
+            wrapper.eq(Material::getSupplierCode, supplierCode);
         }
         wrapper.orderByDesc(Material::getCreatedAt);
         return materialMapper.selectPage(page, wrapper);

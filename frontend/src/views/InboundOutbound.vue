@@ -74,7 +74,7 @@
         <el-form ref="formRef" :model="inboundForm" :rules="inboundRules" label-width="88px">
           <el-form-item label="供应商" prop="supplierCode">
             <el-select v-model="inboundForm.supplierCode" placeholder="请选择供应商" style="width: 100%"
-              filterable>
+              filterable @change="onSupplierChange">
               <el-option v-for="s in supplierOptions" :key="s.supplierCode"
                 :label="`${s.supplierName} (${s.supplierCode})`" :value="s.supplierCode" />
             </el-select>
@@ -88,10 +88,14 @@
                 <span>操作</span>
               </div>
               <div v-for="(item, idx) in inboundForm.details" :key="idx" class="detail-row">
-                <el-select v-model="item.materialCode" placeholder="搜索物料号" size="small"
-                  filterable remote :remote-method="(q) => searchMaterials(q, idx)"
+                <el-select v-model="item.materialCode"
+                  :placeholder="inboundForm.supplierCode ? '搜索物料号' : '请先选择供应商'"
+                  size="small" filterable remote
+                  :remote-method="(q) => searchMaterials(q, idx)"
                   :loading="materialSearchLoading[idx]" clearable style="width: 100%"
-                  @focus="searchMaterials('', idx)">
+                  :disabled="!inboundForm.supplierCode"
+                  @focus="searchMaterials('', idx)"
+                  @change="(val) => fetchPackCapacity(idx, val)">
                   <el-option v-for="m in materialOptions[idx]" :key="m.materialCode"
                     :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
                 </el-select>
@@ -227,7 +231,8 @@
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="editFormRef" :model="editForm" :rules="inboundRules" label-width="88px">
           <el-form-item label="供应商" prop="supplierCode">
-            <el-select v-model="editForm.supplierCode" placeholder="请选择供应商" style="width: 100%" filterable>
+            <el-select v-model="editForm.supplierCode" placeholder="请选择供应商" style="width: 100%"
+              filterable @change="onEditSupplierChange">
               <el-option v-for="s in supplierOptions" :key="s.supplierCode"
                 :label="`${s.supplierName} (${s.supplierCode})`" :value="s.supplierCode" />
             </el-select>
@@ -238,10 +243,14 @@
                 <span>物料号</span><span>单箱容量</span><span>计划入库数</span><span>操作</span>
               </div>
               <div v-for="(item, idx) in editForm.details" :key="idx" class="detail-row">
-                <el-select v-model="item.materialCode" placeholder="搜索物料号" size="small"
-                  filterable remote :remote-method="(q) => searchEditMaterials(q, idx)"
+                <el-select v-model="item.materialCode"
+                  :placeholder="editForm.supplierCode ? '搜索物料号' : '请先选择供应商'"
+                  size="small" filterable remote
+                  :remote-method="(q) => searchEditMaterials(q, idx)"
                   :loading="editMaterialLoading[idx]" clearable style="width: 100%"
-                  @focus="searchEditMaterials('', idx)">
+                  :disabled="!editForm.supplierCode"
+                  @focus="searchEditMaterials('', idx)"
+                  @change="(val) => fetchEditPackCapacity(idx, val)">
                   <el-option v-for="m in editMaterialOptions[idx]" :key="m.materialCode"
                     :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
                 </el-select>
@@ -340,6 +349,7 @@ import { Plus, Delete, Printer, Download } from '@element-plus/icons-vue'
 import { getInboundOrders, createInbound, updateInbound, confirmInbound, getInboundDetail } from '@/api/inbound'
 import { getSuppliers } from '@/api/suppliers'
 import { getMaterials } from '@/api/materials'
+import { getAppliances } from '@/api/appliances'
 import { useUserStore } from '@/stores/user'
 import QRCode from '@/components/QRCode.vue'
 import BoxLabel from '@/components/BoxLabel.vue'
@@ -434,10 +444,22 @@ async function loadSuppliers() {
 }
 
 // ==================== 物料搜索 ====================
+/**
+ * 搜索物料（新建入库单），必须已选择供应商。
+ */
 async function searchMaterials(query, idx) {
+  // 未选供应商时不发起搜索
+  if (!inboundForm.supplierCode) {
+    materialOptions.value[idx] = []
+    return
+  }
   materialSearchLoading.value[idx] = true
   try {
-    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
+    const data = await getMaterials({
+      page: 1, size: 20,
+      keyword: query || undefined,
+      supplierCode: inboundForm.supplierCode
+    })
     materialOptions.value[idx] = data.records || []
   } catch {
     materialOptions.value[idx] = []
@@ -446,12 +468,37 @@ async function searchMaterials(query, idx) {
   }
 }
 
+/**
+ * 当物料被选中时，自动从器具配置获取包装容量。
+ */
+async function fetchPackCapacity(idx, materialCode) {
+  if (!materialCode || !inboundForm.supplierCode) return
+  try {
+    const data = await getAppliances({ page: 1, size: 10, keyword: materialCode })
+    const match = (data.records || []).find(
+      a => a.materialCode === materialCode && a.supplierCode === inboundForm.supplierCode
+    )
+    if (match && match.packCapacity > 0) {
+      inboundForm.details[idx].packCapacity = match.packCapacity
+    }
+  } catch { /* 获取失败时保留默认容量 */ }
+}
+
 // ==================== 新建入库单 ====================
 function addDetail() {
   inboundForm.details.push({ materialCode: '', packCapacity: 20, planQty: 100 })
 }
 function removeDetail(idx) {
   if (inboundForm.details.length > 1) inboundForm.details.splice(idx, 1)
+}
+
+/**
+ * 供应商切换时清空所有物料行。
+ */
+function onSupplierChange() {
+  // 重置每行的物料选择
+  inboundForm.details.forEach(item => { item.materialCode = '' })
+  materialOptions.value = {}
 }
 
 function openInboundDialog() {
@@ -537,16 +584,51 @@ async function handleConfirmSubmit() {
 }
 
 // ==================== 修改入库单 ====================
+/**
+ * 搜索物料（编辑入库单），必须已选择供应商。
+ */
 async function searchEditMaterials(query, idx) {
+  if (!editForm.supplierCode) {
+    editMaterialOptions.value[idx] = []
+    return
+  }
   editMaterialLoading.value[idx] = true
   try {
-    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
+    const data = await getMaterials({
+      page: 1, size: 20,
+      keyword: query || undefined,
+      supplierCode: editForm.supplierCode
+    })
     editMaterialOptions.value[idx] = data.records || []
   } catch {
     editMaterialOptions.value[idx] = []
   } finally {
     editMaterialLoading.value[idx] = false
   }
+}
+
+/**
+ * 编辑对话框：当物料被选中时，自动从器具配置获取包装容量。
+ */
+async function fetchEditPackCapacity(idx, materialCode) {
+  if (!materialCode || !editForm.supplierCode) return
+  try {
+    const data = await getAppliances({ page: 1, size: 10, keyword: materialCode })
+    const match = (data.records || []).find(
+      a => a.materialCode === materialCode && a.supplierCode === editForm.supplierCode
+    )
+    if (match && match.packCapacity > 0) {
+      editForm.details[idx].packCapacity = match.packCapacity
+    }
+  } catch { /* 获取失败时保留默认容量 */ }
+}
+
+/**
+ * 编辑对话框：供应商切换时清空所有物料行。
+ */
+function onEditSupplierChange() {
+  editForm.details.forEach(item => { item.materialCode = '' })
+  editMaterialOptions.value = {}
 }
 
 function addEditDetail() {
