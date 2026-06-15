@@ -758,13 +758,16 @@ function applyAiInboundDraft() {
 }
 
 async function handleCreate() {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  // 手动校验必填项，避免 ref 失效导致静默失败
+  if (!inboundForm.supplierCode) {
+    ElMessage.warning('请选择供应商')
+    return
+  }
   const invalidDetail = inboundForm.details.find(item =>
     !item.materialCode?.trim() || !item.packCapacity || !item.planQty
   )
   if (invalidDetail) {
-    ElMessage.warning('请完整填写每一行物料明细')
+    ElMessage.warning('请完整填写每一行物料明细（物料号、单箱容量、计划入库数）')
     return
   }
   try {
@@ -775,7 +778,9 @@ async function handleCreate() {
     ElMessage.success('入库单创建成功')
     dialogVisible.value = false
     loadOrders()
-  } catch { /* */ }
+  } catch (err) {
+    ElMessage.error(err.message || '创建入库单失败')
+  }
 }
 
 // ==================== 确认入库 ====================
@@ -888,13 +893,16 @@ async function openEditDialog(row) {
 }
 
 async function handleEditSubmit() {
-  const valid = await editFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  // 手动校验必填项，避免 ref 失效导致静默失败
+  if (!editForm.supplierCode) {
+    ElMessage.warning('请选择供应商')
+    return
+  }
   const invalid = editForm.details.find(d =>
     !d.materialCode?.trim() || !d.packCapacity || !d.planQty
   )
   if (invalid) {
-    ElMessage.warning('请完整填写每一行物料明细')
+    ElMessage.warning('请完整填写每一行物料明细（物料号、单箱容量、计划入库数）')
     return
   }
   editSubmitting.value = true
@@ -906,7 +914,9 @@ async function handleEditSubmit() {
     ElMessage.success('入库单修改成功')
     editVisible.value = false
     loadOrders()
-  } catch { /* */ } finally {
+  } catch (err) {
+    ElMessage.error(err.message || '修改入库单失败')
+  } finally {
     editSubmitting.value = false
   }
 }
