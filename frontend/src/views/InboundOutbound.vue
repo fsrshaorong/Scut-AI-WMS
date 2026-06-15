@@ -60,7 +60,46 @@
 
         <!-- === 出库管理 === -->
         <el-tab-pane label="出库管理" name="outbound">
-          <div class="empty-hint">出库管理功能开发中</div>
+          <div class="inbound-summary">
+            <div>
+              <div class="summary-title">出库单流转</div>
+              <div class="summary-desc">创建出库单后扫码确认，系统按先进先出规则校验条码并扣减库存。</div>
+            </div>
+            <div class="summary-stats">
+              <span>待出库 {{ outPendingCount }}</span>
+              <span>已完成 {{ outCompletedCount }}</span>
+            </div>
+          </div>
+
+          <div class="toolbar inbound-toolbar">
+            <el-button type="primary" size="small" @click="openOutboundDialog">
+              <el-icon :size="14"><Plus /></el-icon>
+              <span>新建出库单</span>
+            </el-button>
+            <el-button size="small" @click="openHistoryDialog">出库流水</el-button>
+            <el-button size="small" :loading="outboundLoading" @click="loadOutboundOrders">刷新</el-button>
+          </div>
+          <el-table :data="outboundList" stripe size="small" v-loading="outboundLoading"
+            empty-text="暂无出库单数据" @row-click="openOutDetailDialog" style="cursor: pointer">
+            <el-table-column prop="orderNo" label="出库单号" min-width="180" show-overflow-tooltip />
+            <el-table-column label="状态" width="110" align="center">
+              <template #default="{ row }">
+                <span class="badge" :class="outStatusClass(row.status)">
+                  {{ row.status }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createdAt" label="创建时间" min-width="170" show-overflow-tooltip />
+            <el-table-column label="操作" width="200" align="center">
+              <template #default="{ row }">
+                <el-button v-if="row.status !== '已完成'" type="success" link size="small"
+                  @click.stop="openOutConfirmDialog(row)">
+                  确认出库
+                </el-button>
+                <span v-if="row.status === '已完成'" class="muted-text">无需操作</span>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -335,6 +374,188 @@
         </template>
       </el-dialog>
     </Teleport>
+
+    <!-- 新建出库单对话框 (Teleport to body) -->
+    <Teleport to="body">
+      <el-dialog v-model="outDialogVisible" title="新建出库单"
+        width="min(720px, calc(100vw - 32px))" destroy-on-close class="inbound-dialog">
+        <el-form ref="outFormRef" :model="outboundForm" label-width="88px">
+          <el-form-item label="物料明细" prop="details">
+            <div class="detail-editor">
+              <div class="detail-head">
+                <span>物料号</span>
+                <span>单箱容量</span>
+                <span>计划出库数</span>
+                <span>操作</span>
+              </div>
+              <div v-for="(item, idx) in outboundForm.details" :key="idx" class="detail-row">
+                <el-select v-model="item.materialCode" placeholder="搜索物料号" size="small"
+                  filterable remote :remote-method="(q) => searchOutMaterials(q, idx)"
+                  :loading="outMaterialLoading[idx]" clearable style="width: 100%"
+                  @focus="searchOutMaterials('', idx)">
+                  <el-option v-for="m in outMaterialOptions[idx]" :key="m.materialCode"
+                    :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
+                </el-select>
+                <el-input-number v-model="item.packCapacity" :min="1" :max="999999" size="small"
+                  controls-position="right" />
+                <el-input-number v-model="item.planQty" :min="1" :max="999999" size="small"
+                  controls-position="right" />
+                <el-button type="danger" link size="small" @click="removeOutDetail(idx)"
+                  :disabled="outboundForm.details.length <= 1">
+                  <el-icon :size="14"><Delete /></el-icon>
+                  <span>删除</span>
+                </el-button>
+              </div>
+              <div class="detail-actions">
+                <el-button type="primary" link size="small" @click="addOutDetail">
+                  <el-icon :size="14"><Plus /></el-icon>
+                  <span>添加物料行</span>
+                </el-button>
+              </div>
+            </div>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <div class="dialog-footer">
+            <span class="footer-tip">保存后可在列表中执行确认出库。</span>
+            <div>
+              <el-button @click="outDialogVisible = false">取消</el-button>
+              <el-button type="primary" @click="handleOutCreate">保存</el-button>
+            </div>
+          </div>
+        </template>
+      </el-dialog>
+    </Teleport>
+
+    <!-- 确认出库对话框 (Teleport to body) -->
+    <Teleport to="body">
+      <el-dialog v-model="outConfirmVisible" title="确认出库"
+        width="min(800px, calc(100vw - 32px))" destroy-on-close>
+        <el-alert title="系统将自动按先进先出 (FIFO) 规则校验条码，请确保按入库先后顺序选择条码。"
+          type="info" show-icon :closable="false" style="margin-bottom: 12px" />
+        <div class="confirm-info">
+          <span class="confirm-label">出库单号：</span>
+          <strong>{{ outConfirmTarget?.orderNo }}</strong>
+          <span class="confirm-divider">|</span>
+          <span class="confirm-label">状态：</span>
+          <span class="badge" :class="outStatusClass(outConfirmTarget?.status)">
+            {{ outConfirmTarget?.status }}
+          </span>
+        </div>
+        <el-table :data="outConfirmDetails" stripe size="small" style="margin-top: 12px">
+          <el-table-column prop="materialCode" label="物料号" width="130" />
+          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
+          <el-table-column label="已出数" width="80" align="right">
+            <template #default="{ row }">{{ row.actualQty || 0 }}</template>
+          </el-table-column>
+          <el-table-column label="本次出库数" width="130">
+            <template #default="{ row, $index }">
+              <el-input-number v-model="row._confirmQty" :min="0"
+                :max="(row.planQty || 0) - (row.actualQty || 0)"
+                size="small" controls-position="right" style="width: 110px" />
+            </template>
+          </el-table-column>
+          <el-table-column label="出库条码" min-width="220">
+            <template #default="{ row }">
+              <div class="barcode-tag-area">
+                <el-tag v-for="(bc, i) in (row._barcodes || [])" :key="i"
+                  size="small" closable class="barcode-tag"
+                  @close="removeOutBarcode(row, i)">
+                  {{ bc }}
+                </el-tag>
+                <el-input v-model="row._barcodeInput" placeholder="扫描/输入条码后回车"
+                  size="small" class="barcode-input-inline"
+                  @keyup.enter="addOutBarcode(row)"
+                  @blur="addOutBarcode(row)" />
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <template #footer>
+          <div class="dialog-footer">
+            <span class="footer-tip">请逐行扫描或输入出库条码，系统将校验 FIFO 规则。</span>
+            <div>
+              <el-button @click="outConfirmVisible = false">取消</el-button>
+              <el-button type="primary" :loading="outConfirmSubmitting" @click="handleOutConfirmSubmit">
+                确认出库
+              </el-button>
+            </div>
+          </div>
+        </template>
+      </el-dialog>
+    </Teleport>
+
+    <!-- 出库单详情对话框 (Teleport to body) -->
+    <Teleport to="body">
+      <el-dialog v-model="outDetailVisible" title="出库单详情"
+        width="min(700px, calc(100vw - 32px))" destroy-on-close>
+        <div v-if="outDetailData" class="detail-info-grid">
+          <div class="detail-info-item">
+            <span class="info-label">出库单号</span>
+            <span class="info-value">{{ outDetailData.orderNo }}</span>
+          </div>
+          <div class="detail-info-item">
+            <span class="info-label">状态</span>
+            <span class="badge" :class="outStatusClass(outDetailData.status)">
+              {{ outDetailData.status }}
+            </span>
+          </div>
+          <div class="detail-info-item">
+            <span class="info-label">创建时间</span>
+            <span class="info-value">{{ outDetailData.createdAt }}</span>
+          </div>
+        </div>
+        <!-- 明细表 -->
+        <el-table v-if="outDetailData" :data="outDetailData.details" stripe size="small"
+          style="margin-top: 16px">
+          <el-table-column prop="materialCode" label="物料号" width="140" />
+          <el-table-column prop="packCapacity" label="单箱容量" width="90" align="right" />
+          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
+          <el-table-column prop="actualQty" label="实出数" width="80" align="right" />
+        </el-table>
+        <!-- 出库流水 -->
+        <div v-if="outDetailData && outDetailData.histories && outDetailData.histories.length > 0"
+          style="margin-top: 16px">
+          <div class="barcode-gallery-title">出库流水（共 {{ outDetailData.histories.length }} 条）</div>
+          <el-table :data="outDetailData.histories" stripe size="small">
+            <el-table-column prop="barcode" label="条码号" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="inboundOrderNo" label="来源入库单号" width="200" show-overflow-tooltip />
+            <el-table-column prop="deductQty" label="扣减数量" width="90" align="right" />
+            <el-table-column prop="createdAt" label="出库时间" width="170" show-overflow-tooltip />
+          </el-table>
+        </div>
+        <div v-else class="empty-hint" style="padding: 30px 0">暂无出库流水</div>
+        <template #footer>
+          <el-button @click="outDetailVisible = false">关闭</el-button>
+        </template>
+      </el-dialog>
+    </Teleport>
+
+    <!-- 出库流水查询对话框 (Teleport to body) -->
+    <Teleport to="body">
+      <el-dialog v-model="historyVisible" title="出库批次流水查询"
+        width="min(900px, calc(100vw - 32px))" destroy-on-close>
+        <div class="toolbar" style="margin-bottom: 12px">
+          <el-input v-model="historyQuery.orderNo" placeholder="出库单号（模糊）" clearable
+            size="small" style="width: 180px" @keyup.enter="loadHistories" />
+          <el-input v-model="historyQuery.materialCode" placeholder="物料号" clearable
+            size="small" style="width: 140px" @keyup.enter="loadHistories" />
+          <el-button type="primary" size="small" @click="loadHistories">查询</el-button>
+        </div>
+        <el-table :data="historyList" stripe size="small" v-loading="historyLoading"
+          empty-text="暂无出库流水记录">
+          <el-table-column prop="outboundOrderNo" label="出库单号" width="200" show-overflow-tooltip />
+          <el-table-column prop="materialCode" label="物料号" width="130" />
+          <el-table-column prop="inboundOrderNo" label="来源入库单号" width="200" show-overflow-tooltip />
+          <el-table-column prop="barcode" label="条码号" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="deductQty" label="扣减数量" width="90" align="right" />
+          <el-table-column prop="createdAt" label="出库时间" width="170" show-overflow-tooltip />
+        </el-table>
+        <template #footer>
+          <el-button @click="historyVisible = false">关闭</el-button>
+        </template>
+      </el-dialog>
+    </Teleport>
   </div>
 </template>
 
@@ -347,6 +568,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Delete, Printer, Download } from '@element-plus/icons-vue'
 import { getInboundOrders, createInbound, updateInbound, confirmInbound, getInboundDetail } from '@/api/inbound'
+import { getOutboundOrders, createOutbound, confirmOutbound, getOutboundDetail, getOutboundHistories } from '@/api/outbound'
 import { getSuppliers } from '@/api/suppliers'
 import { getMaterials } from '@/api/materials'
 import { getAppliances } from '@/api/appliances'
@@ -417,6 +639,7 @@ const completedCount = computed(() => inboundList.value.filter(row => row.status
 onMounted(() => {
   loadOrders()
   loadSuppliers()
+  loadOutboundOrders()
   applyAiInboundDraft()
 })
 
@@ -424,6 +647,11 @@ watch(
   () => route.query,
   () => applyAiInboundDraft()
 )
+
+// 切换 tab 时加载对应数据
+watch(activeTab, (tab) => {
+  if (tab === 'outbound') loadOutboundOrders()
+})
 
 // ==================== 加载数据 ====================
 async function loadOrders() {
@@ -781,6 +1009,201 @@ function doPrint() {
   win.focus()
   setTimeout(() => { win.print(); win.close() }, 300)
 }
+
+// ==================== 出库管理 ====================
+const outboundList = ref([])
+const outboundLoading = ref(false)
+
+// 统计
+const outPendingCount = computed(() => outboundList.value.filter(r => r.status !== '已完成').length)
+const outCompletedCount = computed(() => outboundList.value.filter(r => r.status === '已完成').length)
+
+function outStatusClass(status) {
+  if (status === '已完成') return 'badge-success'
+  if (status === '部分出库') return 'badge-warn'
+  return 'badge-default'
+}
+
+async function loadOutboundOrders() {
+  outboundLoading.value = true
+  try {
+    const data = await getOutboundOrders({ page: 1, size: 50 })
+    outboundList.value = data.records || []
+  } catch { /* */ } finally {
+    outboundLoading.value = false
+  }
+}
+
+// ==================== 新建出库单 ====================
+const outDialogVisible = ref(false)
+const outFormRef = ref(null)
+const outMaterialOptions = ref({})
+const outMaterialLoading = ref({})
+
+const outboundForm = reactive({
+  details: [{ materialCode: '', packCapacity: 20, planQty: 200 }]
+})
+
+function addOutDetail() {
+  outboundForm.details.push({ materialCode: '', packCapacity: 20, planQty: 100 })
+}
+function removeOutDetail(idx) {
+  if (outboundForm.details.length > 1) outboundForm.details.splice(idx, 1)
+}
+
+function openOutboundDialog() {
+  outboundForm.details = [{ materialCode: '', packCapacity: 20, planQty: 200 }]
+  outMaterialOptions.value = {}
+  outDialogVisible.value = true
+}
+
+async function searchOutMaterials(query, idx) {
+  outMaterialLoading.value[idx] = true
+  try {
+    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
+    outMaterialOptions.value[idx] = data.records || []
+  } catch {
+    outMaterialOptions.value[idx] = []
+  } finally {
+    outMaterialLoading.value[idx] = false
+  }
+}
+
+async function handleOutCreate() {
+  const invalid = outboundForm.details.find(item =>
+    !item.materialCode?.trim() || !item.packCapacity || !item.planQty
+  )
+  if (invalid) {
+    ElMessage.warning('请完整填写每一行物料明细')
+    return
+  }
+  try {
+    await createOutbound({ details: outboundForm.details })
+    ElMessage.success('出库单创建成功')
+    outDialogVisible.value = false
+    loadOutboundOrders()
+  } catch { /* */ }
+}
+
+// ==================== 确认出库 ====================
+const outConfirmVisible = ref(false)
+const outConfirmTarget = ref(null)
+const outConfirmDetails = ref([])
+const outConfirmSubmitting = ref(false)
+
+async function openOutConfirmDialog(row) {
+  outConfirmTarget.value = row
+  outConfirmSubmitting.value = false
+  try {
+    const data = await getOutboundDetail(row.id)
+    // 为每行添加 _confirmQty 和 _barcodes / _barcodeInput 字段
+    outConfirmDetails.value = (data.details || []).map(d => ({
+      ...d,
+      _confirmQty: Math.max(0, (d.planQty || 0) - (d.actualQty || 0)),
+      _barcodes: [],
+      _barcodeInput: ''
+    }))
+  } catch {
+    outConfirmDetails.value = []
+  }
+  outConfirmVisible.value = true
+}
+
+/**
+ * 将条码输入框中的值添加为条码标签。
+ * 支持扫码枪回车输入和手动粘贴（按逗号/空格/换行分割）。
+ */
+function addOutBarcode(row) {
+  const raw = (row._barcodeInput || '').trim()
+  if (!raw) return
+  // 支持逗号、空格、换行作为分隔符，适配批量粘贴
+  const parts = raw.split(/[,，\s\n\r]+/).filter(Boolean)
+  if (!row._barcodes) row._barcodes = []
+  for (const part of parts) {
+    if (!row._barcodes.includes(part)) {
+      row._barcodes.push(part)
+    }
+  }
+  row._barcodeInput = ''
+}
+
+function removeOutBarcode(row, idx) {
+  row._barcodes.splice(idx, 1)
+}
+
+async function handleOutConfirmSubmit() {
+  // 校验：每条明细的条码折算数量应与本次出库数一致
+  for (const row of outConfirmDetails.value) {
+    if (row._confirmQty > 0 && (!row._barcodes || row._barcodes.length === 0)) {
+      ElMessage.warning(`物料 ${row.materialCode} 本次出库数大于 0，请扫描或输入条码`)
+      return
+    }
+  }
+
+  outConfirmSubmitting.value = true
+  try {
+    const details = outConfirmDetails.value
+      .filter(d => d._confirmQty > 0)
+      .map(d => ({
+        detailId: d.id,
+        actualQty: d._confirmQty,
+        barcodes: d._barcodes || []
+      }))
+    if (details.length === 0) {
+      ElMessage.warning('请至少填写一条明细的本次出库数')
+      outConfirmSubmitting.value = false
+      return
+    }
+    await confirmOutbound(outConfirmTarget.value.id, { details })
+    ElMessage.success('出库确认成功')
+    outConfirmVisible.value = false
+    loadOutboundOrders()
+  } catch { /* 后端会返回 FIFO 等校验错误 */ } finally {
+    outConfirmSubmitting.value = false
+  }
+}
+
+// ==================== 出库单详情 ====================
+const outDetailVisible = ref(false)
+const outDetailData = ref(null)
+
+async function openOutDetailDialog(row) {
+  outDetailData.value = null
+  outDetailVisible.value = true
+  try {
+    outDetailData.value = await getOutboundDetail(row.id)
+  } catch {
+    outDetailVisible.value = false
+  }
+}
+
+// ==================== 出库流水查询 ====================
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyList = ref([])
+const historyQuery = reactive({ orderNo: '', materialCode: '' })
+
+function openHistoryDialog() {
+  historyQuery.orderNo = ''
+  historyQuery.materialCode = ''
+  historyList.value = []
+  historyVisible.value = true
+}
+
+async function loadHistories() {
+  historyLoading.value = true
+  try {
+    const params = { page: 1, size: 50 }
+    if (historyQuery.orderNo.trim()) params.orderNo = historyQuery.orderNo.trim()
+    if (historyQuery.materialCode.trim()) params.materialCode = historyQuery.materialCode.trim()
+    const data = await getOutboundHistories(params)
+    historyList.value = data.records || []
+  } catch {
+    historyList.value = []
+  } finally {
+    historyLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -942,6 +1365,7 @@ function doPrint() {
   white-space: nowrap;
 }
 .badge-success { background: #f0f9eb; color: #67c23a; }
+.badge-warn    { background: #fdf6ec; color: #e6a23c; }
 .badge-default { background: #f4f4f5; color: #909399; }
 
 /* ==================== 标签画廊（网格布局，可点击下载） ==================== */
@@ -1097,5 +1521,42 @@ function doPrint() {
   .detail-info-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ==================== 出库条码输入区 ==================== */
+.barcode-tag-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: #fafafa;
+}
+.barcode-tag-area:focus-within {
+  border-color: var(--wms-primary);
+  background: #fff;
+}
+.barcode-tag {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.barcode-input-inline {
+  flex: 1;
+  min-width: 120px;
+}
+.barcode-input-inline :deep(.el-input__wrapper) {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0 4px;
+}
+.barcode-input-inline :deep(.el-input__wrapper:hover),
+.barcode-input-inline :deep(.el-input__wrapper.is-focus) {
+  box-shadow: none;
 }
 </style>

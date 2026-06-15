@@ -1,5 +1,4 @@
 <!--
-  用户登录页 — 简洁纯色风格。
   @author Focus
   @date 2026-06-03
 -->
@@ -147,7 +146,7 @@ async function handleLogin() {
   color: var(--text-primary);
   margin-bottom: 28px;
 }
-/* 禁止表单标签换行 */
+
 :deep(.el-form-item__label) {
   white-space: nowrap;
 }

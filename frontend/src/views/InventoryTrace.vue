@@ -35,6 +35,9 @@
         <el-table-column prop="materialCode" label="物料号" width="130" />
         <el-table-column prop="supplierCode" label="供应商" width="150" show-overflow-tooltip />
         <el-table-column prop="orderNo" label="入库单号" width="200" show-overflow-tooltip />
+        <el-table-column prop="outboundOrderNo" label="出库单号" width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.outboundOrderNo || '—' }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
             <span class="badge" :class="statusBadgeClass(row.status)">
@@ -53,6 +56,9 @@
         </el-table-column>
         <el-table-column prop="inboundCreatedAt" label="入库时间" width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.inboundCreatedAt || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="outboundAt" label="出库时间" width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.outboundAt || '—' }}</template>
         </el-table-column>
         <el-table-column prop="barcodeUpdatedAt" label="最后更新" width="170" show-overflow-tooltip />
       </el-table>
