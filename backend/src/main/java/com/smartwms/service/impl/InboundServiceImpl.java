@@ -103,6 +103,8 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setBarcode(barcodeStr);
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
+                barcode.setType("inbound");
+                barcode.setRemainingQty(item.getPackCapacity());
                 barcodeMapper.insert(barcode);
                 // 逐箱错开 1 秒，确保 FIFO 排序可区分
                 Barcode updateTime = new Barcode();
@@ -255,6 +257,8 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setBarcode(barcodeStr);
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
+                barcode.setType("inbound");
+                barcode.setRemainingQty(item.getPackCapacity());
                 barcodeMapper.insert(barcode);
                 // 逐箱错开 1 秒，确保 FIFO 排序可区分
                 Barcode updateTime2 = new Barcode();
@@ -464,6 +468,8 @@ public class InboundServiceImpl implements InboundService {
         barcode.setSupplierCode(supplierCode);
         barcode.setInboundId(order.getId());
         barcode.setStatus("待入库");
+        barcode.setType("inbound");
+        barcode.setRemainingQty(packCapacity);
         barcodeMapper.insert(barcode);
 
         return barcode;

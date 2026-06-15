@@ -86,14 +86,13 @@ public class OutboundController {
 
     /**
      * 统一扫码入口：自动判定条码类型（入库/出库）并执行对应操作。
-     * 出库标签条码格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
+     * 出库标签格式: OUT|<materialCode>|<outboundOrderNo>|<packCapacity>|<planQty>|<boxQty>|<boxSeq>
+     * 入库条码格式: WMS|<materialCode>|<supplierCode>|<planQty>|<packCapacity>|<actualQty>|<boxSeq>
      */
     @PostMapping("/scan")
     public Result<ScanResponse> unifiedScan(@Valid @RequestBody ScanInboundRequest request) {
         String barcode = request.getBarcode().trim();
-        // 解析条码第三个字段：OUT → 出库标签，其他 → 入库条码
-        String[] parts = barcode.split("\\|");
-        if (parts.length >= 3 && "OUT".equals(parts[2])) {
+        if (barcode.startsWith("OUT|")) {
             // 出库标签 → 扫码出库
             return Result.success("扫码出库成功", outboundService.scanOutbound(barcode));
         }

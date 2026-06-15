@@ -417,7 +417,8 @@ public class DataInitializer implements CommandLineRunner {
 
             // 创建虚拟入库单（每条物料错开 2 天，确保 FIFO 顺序明显）
             LocalDateTime orderTime = baseTime.plusDays(i * 2L);
-            String orderNo = "INIT" + orderTime.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            String orderNo = String.format("RK%s%04d",
+                    orderTime.format(DateTimeFormatter.ofPattern("yyyyMMddHHmm")), i + 1);
             InboundOrder order = new InboundOrder();
             order.setOrderNo(orderNo);
             order.setSupplierCode(supplierCode);
@@ -454,7 +455,10 @@ public class DataInitializer implements CommandLineRunner {
                 bc.setSupplierCode(supplierCode);
                 bc.setBarcode(barcode);
                 bc.setInboundId(order.getId());
+                bc.setType("inbound");
                 bc.setStatus("在库");
+                bc.setRemainingQty((boxSeq < boxCount) ? packCapacity
+                        : (lastQty > 0 ? lastQty : packCapacity));
                 barcodeMapper.insert(bc);
 
                 // 每箱错开 1 毫秒，确保同物料内 FIFO 可区分

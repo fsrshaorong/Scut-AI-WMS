@@ -18,17 +18,23 @@ public class Barcode {
     /** 零件编码 */
     private String materialCode;
 
-    /** 生产供应商 */
+    /** 生产供应商 / OUT（出库标签时） */
     private String supplierCode;
 
     /** 唯一箱单标签条码号 */
     private String barcode;
 
-    /** 关联入库单主键 ID（追溯条码来源） */
+    /** 关联入库单主键 ID（入库条码）/ 关联出库单主键 ID（出库标签） */
     private Long inboundId;
 
-    /** 条码生命周期：待入库 / 在库 / 已出库 */
+    /** 条码类型：inbound（入库条码）/ outbound（出库标签） */
+    private String type;
+
+    /** 条码生命周期：待入库/在库/已出库（入库）；待出库/已出库（出库） */
     private String status;
+
+    /** 当前剩余数量（入库条码拆箱后余量，出库标签为单箱数量） */
+    private Integer remainingQty;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -53,8 +59,14 @@ public class Barcode {
     public Long getInboundId() { return inboundId; }
     public void setInboundId(Long inboundId) { this.inboundId = inboundId; }
 
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public Integer getRemainingQty() { return remainingQty; }
+    public void setRemainingQty(Integer remainingQty) { this.remainingQty = remainingQty; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -42,17 +42,20 @@ const displayWidth = 300
 
 /**
  * 解析条码字符串，提取各字段。
- * 格式: WMS|<materialCode>|<supplierCode>|<planQty>|<packCapacity>|<actualQty>|<boxSeq>
+ * 入库格式: WMS|<materialCode>|<supplierCode>|<planQty>|<packCapacity>|<actualQty>|<boxSeq>
+ * 出库格式: OUT|<materialCode>|<outboundOrderNo>|<packCapacity>|<planQty>|<boxQty>|<boxSeq>
  */
 function parseBarcode(str) {
   const parts = (str || '').split('|')
+  const isOutbound = parts[0] === 'OUT'
   return {
     materialCode: parts[1] || '—',
-    supplierCode: parts[2] || '—',
-    planQty: parseInt(parts[3]) || 0,
-    packCapacity: parseInt(parts[4]) || 0,
-    actualQty: parseInt(parts[5]) || 0,
+    supplierCode: isOutbound ? '出库' : (parts[2] || '—'),
+    planQty: parseInt(parts[isOutbound ? 4 : 3]) || 0,
+    packCapacity: parseInt(parts[isOutbound ? 3 : 4]) || 0,
+    actualQty: isOutbound ? (parseInt(parts[5]) || 0) : (parseInt(parts[5]) || 0),
     boxSeq: parseInt(parts[6]) || 1,
+    isOutbound,
   }
 }
 

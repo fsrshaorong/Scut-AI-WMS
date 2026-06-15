@@ -1,5 +1,6 @@
 package com.smartwms.dto;
 
+import com.smartwms.entity.Barcode;
 import com.smartwms.entity.OutboundDetail;
 import com.smartwms.entity.OutboundOrder;
 
@@ -15,10 +16,12 @@ public class OutboundOrderVO {
     private String status;
     private String createdAt;
     private List<OutboundDetail> details;
+    private List<Barcode> barcodes;
     private List<OutboundHistoryVO> histories;
 
     public static OutboundOrderVO from(OutboundOrder order,
                                        List<OutboundDetail> details,
+                                       List<Barcode> barcodes,
                                        List<OutboundHistoryVO> histories) {
         OutboundOrderVO vo = new OutboundOrderVO();
         vo.setId(order.getId());
@@ -26,6 +29,7 @@ public class OutboundOrderVO {
         vo.setStatus(order.getStatus());
         vo.setCreatedAt(order.getCreatedAt() != null ? order.getCreatedAt().toString() : null);
         vo.setDetails(details);
+        vo.setBarcodes(barcodes);
         vo.setHistories(histories);
         return vo;
     }
@@ -40,6 +44,8 @@ public class OutboundOrderVO {
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
     public List<OutboundDetail> getDetails() { return details; }
     public void setDetails(List<OutboundDetail> details) { this.details = details; }
+    public List<Barcode> getBarcodes() { return barcodes; }
+    public void setBarcodes(List<Barcode> barcodes) { this.barcodes = barcodes; }
     public List<OutboundHistoryVO> getHistories() { return histories; }
     public void setHistories(List<OutboundHistoryVO> histories) { this.histories = histories; }
 }

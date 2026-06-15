@@ -70,7 +70,8 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 创建出库单。
+     * 创建出库单，同时执行拆零拣选 + 重新封装。
+     * 按 FIFO 从入库条码中拆出所需物料，重新按出库箱容量封装为出库标签。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -82,14 +83,98 @@ public class OutboundServiceImpl implements OutboundService {
         outboundOrderMapper.insert(order);
 
         for (OutboundOrderRequest.OutboundDetailItem item : request.getDetails()) {
+            String materialCode = item.getMaterialCode();
+            int outPackCapacity = item.getPackCapacity() != null ? item.getPackCapacity() : 1;
+            int planQty = item.getPlanQty() != null ? item.getPlanQty() : 0;
+
+            // 1. 创建出库明细
             OutboundDetail detail = new OutboundDetail();
             detail.setOutboundId(order.getId());
             detail.setOrderNo(orderNo);
-            detail.setMaterialCode(item.getMaterialCode());
-            detail.setPackCapacity(item.getPackCapacity());
-            detail.setPlanQty(item.getPlanQty());
+            detail.setMaterialCode(materialCode);
+            detail.setPackCapacity(outPackCapacity);
+            detail.setPlanQty(planQty);
             detail.setActualQty(0);
             outboundDetailMapper.insert(detail);
+
+            if (planQty <= 0) continue;
+
+            // 2. 校验库存
+            Inventory inventory = loadInventory(materialCode);
+            int stockQty = inventory.getStockQty() != null ? inventory.getStockQty() : 0;
+            if (stockQty < planQty) {
+                throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                        "库存不足：物料 " + materialCode + " 需要 " + planQty + "，当前仅剩 " + stockQty);
+            }
+
+            // 3. FIFO 拆零拣选：从最早的入库箱逐个拆出物料
+            List<Barcode> inboundBarcodes = barcodeMapper.selectList(
+                    new LambdaQueryWrapper<Barcode>()
+                            .eq(Barcode::getMaterialCode, materialCode)
+                            .eq(Barcode::getType, "inbound")
+                            .eq(Barcode::getStatus, "在库")
+                            .gt(Barcode::getRemainingQty, 0)
+            );
+            // FIFO 排序：入库单创建时间 → 条码创建时间 → 条码 ID
+            Map<Long, InboundOrder> orderCache = new HashMap<>();
+            inboundBarcodes = inboundBarcodes.stream()
+                    .sorted(Comparator
+                            .comparing((Barcode bc) -> {
+                                InboundOrder io = orderCache.computeIfAbsent(
+                                        bc.getInboundId(), inboundOrderMapper::selectById);
+                                return io != null && io.getCreatedAt() != null
+                                        ? io.getCreatedAt() : LocalDateTime.MAX;
+                            })
+                            .thenComparing(Barcode::getCreatedAt,
+                                    Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(Barcode::getId))
+                    .toList();
+
+            // 4. 逐个拆箱，累计拣货
+            int remaining = planQty;
+            java.util.List<Barcode> pickedBarcodes = new java.util.ArrayList<>();
+            for (Barcode ib : inboundBarcodes) {
+                if (remaining <= 0) break;
+                int available = ib.getRemainingQty() != null ? ib.getRemainingQty() : 0;
+                int take = Math.min(available, remaining);
+                // 更新入库条码余量
+                ib.setRemainingQty(available - take);
+                if (ib.getRemainingQty() <= 0) {
+                    ib.setStatus("已出库");
+                }
+                barcodeMapper.updateById(ib);
+                // 记录拣货信息（来源条码 + 本次取出数量）
+                pickedBarcodes.add(ib);
+                remaining -= take;
+            }
+
+            if (remaining > 0) {
+                throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                        "物料 " + materialCode + " FIFO拣货不足：缺 " + remaining + " 件");
+            }
+
+            // 5. 重新封装为出库标签
+            int boxCount = (int) Math.ceil((double) planQty / outPackCapacity);
+            for (int boxSeq = 1; boxSeq <= boxCount; boxSeq++) {
+                int boxQty = (boxSeq < boxCount) ? outPackCapacity
+                        : planQty - outPackCapacity * (boxCount - 1);
+                String outBarcode = String.format("OUT|%s|%s|%d|%d|%d|%d",
+                        materialCode, orderNo, outPackCapacity, planQty, boxQty, boxSeq);
+
+                Barcode ob = new Barcode();
+                ob.setMaterialCode(materialCode);
+                ob.setSupplierCode("OUT");
+                ob.setBarcode(outBarcode);
+                ob.setInboundId(order.getId()); // 出库标签关联到出库单
+                ob.setType("outbound");
+                ob.setStatus("待出库");
+                ob.setRemainingQty(boxQty);
+                barcodeMapper.insert(ob);
+            }
+
+            // 6. 扣减库存
+            inventory.setStockQty(stockQty - planQty);
+            inventoryMapper.updateById(inventory);
         }
         return order;
     }
@@ -116,13 +201,20 @@ public class OutboundServiceImpl implements OutboundService {
         List<OutboundDetail> details = outboundDetailMapper.selectList(
                 new LambdaQueryWrapper<OutboundDetail>().eq(OutboundDetail::getOutboundId, id)
         );
+        // 出库标签（type=outbound, inboundId 字段复用为出库单 ID）
+        List<Barcode> barcodes = barcodeMapper.selectList(
+                new LambdaQueryWrapper<Barcode>()
+                        .eq(Barcode::getType, "outbound")
+                        .eq(Barcode::getInboundId, id)
+                        .orderByAsc(Barcode::getBarcode)
+        );
         List<OutboundHistoryVO> histories = outboundHistoryMapper.selectList(
                 new LambdaQueryWrapper<OutboundHistory>()
                         .eq(OutboundHistory::getOutboundId, id)
                         .orderByAsc(OutboundHistory::getCreatedAt)
                         .orderByAsc(OutboundHistory::getId)
         ).stream().map(this::toHistoryVO).collect(Collectors.toList());
-        return OutboundOrderVO.from(order, details, histories);
+        return OutboundOrderVO.from(order, details, barcodes, histories);
     }
 
     /**
@@ -304,6 +396,7 @@ public class OutboundServiceImpl implements OutboundService {
                               Map<Long, InboundOrder> inboundOrderCache) {
         List<Barcode> availableBarcodes = barcodeMapper.selectList(
                 new LambdaQueryWrapper<Barcode>()
+                        .eq(Barcode::getType, "inbound")
                         .eq(Barcode::getMaterialCode, detail.getMaterialCode())
                         .eq(Barcode::getStatus, "在库")
         );
@@ -415,145 +508,87 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 扫码出库：解析出库标签条码，按 FIFO 选取仓库条码并核销一箱。
-     * 条码格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
+     * 扫码出库：校验出库标签并标记已出库。
+     * 出库标签格式: OUT|<materialCode>|<outboundOrderNo>|<packCapacity>|<planQty>|<boxQty>|<boxSeq>
+     * 拣货和封箱已在出库单创建时完成，此处仅做最终核销。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ScanResponse scanOutbound(String barcodeStr) {
-        if (barcodeStr == null || !barcodeStr.startsWith("WMS|")) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的出库标签条码格式");
-        }
-        String[] parts = barcodeStr.split("\\|");
-        if (parts.length < 7 || !"OUT".equals(parts[2])) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "非出库标签条码，请使用出库箱单标签");
-        }
-        String materialCode = parts[1];
-        int boxSeq;
-        try {
-            boxSeq = Integer.parseInt(parts[6]);
-        } catch (NumberFormatException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的箱号");
+        if (barcodeStr == null || !barcodeStr.startsWith("OUT|")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的出库标签条码，请使用 OUT|... 格式的出库箱单标签");
         }
 
-        // 查找物料对应的未完成出库单
-        List<OutboundOrder> orders = outboundOrderMapper.selectList(
-                new LambdaQueryWrapper<OutboundOrder>()
-                        .ne(OutboundOrder::getStatus, "已完成")
-                        .orderByAsc(OutboundOrder::getCreatedAt)
-        );
-        OutboundOrder targetOrder = null;
-        OutboundDetail targetDetail = null;
-        for (OutboundOrder order : orders) {
-            List<OutboundDetail> details = outboundDetailMapper.selectList(
-                    new LambdaQueryWrapper<OutboundDetail>()
-                            .eq(OutboundDetail::getOutboundId, order.getId())
-                            .eq(OutboundDetail::getMaterialCode, materialCode)
-            );
-            for (OutboundDetail d : details) {
-                int planned = d.getPlanQty() != null ? d.getPlanQty() : 0;
-                int actual = d.getActualQty() != null ? d.getActualQty() : 0;
-                if (actual < planned) {
-                    targetOrder = order;
-                    targetDetail = d;
-                    break;
-                }
-            }
-            if (targetOrder != null) break;
-        }
-        if (targetOrder == null || targetDetail == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND,
-                    "未找到物料 " + materialCode + " 的待出库订单");
-        }
-
-        // 先校验库存
-        Inventory inventory = loadInventory(materialCode);
-        int stockQty = inventory.getStockQty() != null ? inventory.getStockQty() : 0;
-
-        // 按 FIFO 选取在库条码：排序依据 = 入库单创建时间 → 条码创建时间 → 条码 ID
-        List<Barcode> availableBarcodes = barcodeMapper.selectList(
+        // 查找出库标签记录
+        Barcode outBarcode = barcodeMapper.selectOne(
                 new LambdaQueryWrapper<Barcode>()
-                        .eq(Barcode::getMaterialCode, materialCode)
-                        .eq(Barcode::getStatus, "在库")
+                        .eq(Barcode::getBarcode, barcodeStr)
+                        .eq(Barcode::getType, "outbound")
         );
-        if (availableBarcodes.isEmpty()) {
-            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
-                    "物料 " + materialCode + " 无在库条码，请先完成入库确认生成条码");
+        if (outBarcode == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "出库标签不存在：" + barcodeStr);
+        }
+        if ("已出库".equals(outBarcode.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该出库标签已核销，请勿重复扫码");
+        }
+        if (!"待出库".equals(outBarcode.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "该出库标签状态异常：" + outBarcode.getStatus());
         }
 
-        // FIFO 三级排序
-        Map<Long, InboundOrder> inboundOrderCache = new HashMap<>();
-        availableBarcodes = availableBarcodes.stream()
-                .filter(bc -> bc.getInboundId() != null)
-                .sorted(Comparator
-                        .comparing((Barcode bc) -> {
-                            InboundOrder io = inboundOrderCache.computeIfAbsent(
-                                    bc.getInboundId(), inboundOrderMapper::selectById);
-                            return io != null && io.getCreatedAt() != null
-                                    ? io.getCreatedAt() : LocalDateTime.MAX;
-                        })
-                        .thenComparing(Barcode::getCreatedAt,
-                                Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(Barcode::getId))
-                .toList();
+        String materialCode = outBarcode.getMaterialCode();
+        int boxQty = outBarcode.getRemainingQty() != null ? outBarcode.getRemainingQty() : 0;
 
-        if (availableBarcodes.isEmpty()) {
-            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
-                    "物料 " + materialCode + " 无有效在库条码（缺少入库来源信息）");
+        // 标记出库标签为已出库
+        outBarcode.setStatus("已出库");
+        barcodeMapper.updateById(outBarcode);
+
+        // 找到关联的出库单和明细，更新实际数量
+        Long outboundId = outBarcode.getInboundId(); // inboundId 字段复用于出库单ID
+        OutboundOrder order = outboundOrderMapper.selectById(outboundId);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "出库标签关联的出库单不存在");
         }
 
-        // FIFO 选取最早一箱
-        Barcode selectedBarcode = availableBarcodes.get(0);
-        InboundDetail inboundDetail = loadInboundDetailForBarcode(selectedBarcode, materialCode);
-        int deductQty = calculateBarcodeQty(selectedBarcode, inboundDetail);
-
-        if (stockQty < deductQty) {
-            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
-                    "库存不足：物料 " + materialCode + " 需要 " + deductQty
-                            + "，当前仅剩 " + stockQty);
+        OutboundDetail detail = outboundDetailMapper.selectOne(
+                new LambdaQueryWrapper<OutboundDetail>()
+                        .eq(OutboundDetail::getOutboundId, outboundId)
+                        .eq(OutboundDetail::getMaterialCode, materialCode)
+        );
+        if (detail != null) {
+            int currentActual = detail.getActualQty() != null ? detail.getActualQty() : 0;
+            detail.setActualQty(currentActual + boxQty);
+            outboundDetailMapper.updateById(detail);
         }
 
         // 记录出库流水
         OutboundHistory history = new OutboundHistory();
-        history.setOutboundId(targetOrder.getId());
-        history.setOutboundOrderNo(targetOrder.getOrderNo());
-        history.setOutboundDetailId(targetDetail.getId());
+        history.setOutboundId(order.getId());
+        history.setOutboundOrderNo(order.getOrderNo());
+        history.setOutboundDetailId(detail != null ? detail.getId() : 0L);
         history.setMaterialCode(materialCode);
-        history.setInboundId(selectedBarcode.getInboundId());
-        history.setInboundOrderNo(inboundDetail.getOrderNo());
-        history.setInboundDetailId(inboundDetail.getId());
-        history.setBarcodeId(selectedBarcode.getId());
-        history.setBarcode(selectedBarcode.getBarcode());
-        history.setDeductQty(deductQty);
+        history.setInboundId(0L);
+        history.setInboundOrderNo("拆零重封装");
+        history.setInboundDetailId(0L);
+        history.setBarcodeId(outBarcode.getId());
+        history.setBarcode(barcodeStr);
+        history.setDeductQty(boxQty);
         outboundHistoryMapper.insert(history);
-
-        // 更新条码状态为"已出库"
-        selectedBarcode.setStatus("已出库");
-        barcodeMapper.updateById(selectedBarcode);
-
-        // 更新出库明细的实际数量
-        int currentActual = targetDetail.getActualQty() != null ? targetDetail.getActualQty() : 0;
-        targetDetail.setActualQty(currentActual + deductQty);
-        outboundDetailMapper.updateById(targetDetail);
-
-        // 扣减库存
-        inventory.setStockQty(stockQty - deductQty);
-        inventoryMapper.updateById(inventory);
 
         // 更新出库单状态
         List<OutboundDetail> allDetails = outboundDetailMapper.selectList(
-                new LambdaQueryWrapper<OutboundDetail>().eq(OutboundDetail::getOutboundId, targetOrder.getId())
+                new LambdaQueryWrapper<OutboundDetail>().eq(OutboundDetail::getOutboundId, order.getId())
         );
         boolean allCompleted = allDetails.stream().allMatch(d -> {
             int plan = d.getPlanQty() != null ? d.getPlanQty() : 0;
             int act = d.getActualQty() != null ? d.getActualQty() : 0;
             return act >= plan;
         });
-        boolean anyConfirmed = allDetails.stream().anyMatch(d -> (d.getActualQty() != null ? d.getActualQty() : 0) > 0);
-        targetOrder.setStatus(allCompleted ? "已完成" : (anyConfirmed ? "部分出库" : "未出库"));
-        outboundOrderMapper.updateById(targetOrder);
+        boolean anyConfirmed = allDetails.stream().anyMatch(
+                d -> (d.getActualQty() != null ? d.getActualQty() : 0) > 0);
+        order.setStatus(allCompleted ? "已完成" : (anyConfirmed ? "部分出库" : "未出库"));
+        outboundOrderMapper.updateById(order);
 
-        return ScanResponse.outbound(targetOrder.getOrderNo(), materialCode,
-                selectedBarcode.getBarcode(), deductQty);
+        return ScanResponse.outbound(order.getOrderNo(), materialCode, barcodeStr, boxQty);
     }
 }

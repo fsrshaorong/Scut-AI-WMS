@@ -513,22 +513,25 @@
           <el-table-column prop="planQty" label="计划数" width="80" align="right" />
           <el-table-column prop="actualQty" label="实出数" width="80" align="right" />
         </el-table>
-        <!-- 出库标签画廊（创建时即根据明细生成，可下载打印后用于扫码出库） -->
-        <div v-if="outDetailData && outDetailLabels.length > 0" class="barcode-gallery">
-          <div class="barcode-gallery-title">出库标签（共 {{ outDetailLabels.length }} 个，点击可下载完整标签）</div>
+        <!-- 出库标签画廊（出库单创建时已封装，可下载打印后用于扫码出库） -->
+        <div v-if="outDetailData && outDetailData.barcodes && outDetailData.barcodes.length > 0"
+          class="barcode-gallery">
+          <div class="barcode-gallery-title">出库标签（共 {{ outDetailData.barcodes.length }} 个，点击可下载完整标签）</div>
           <div class="label-grid">
-            <div v-for="(lb, i) in outDetailLabels" :key="lb.barcode" class="label-card"
-              @click="downloadOutLabel(lb, $event)">
+            <div v-for="bc in outDetailData.barcodes" :key="bc.barcode" class="label-card"
+              @click="downloadOutLabel(bc, $event)">
               <div class="label-card-header">
-                <span class="barcode-status-tag tag-pending">待出库</span>
+                <span class="barcode-status-tag" :class="bc.status === '已出库' ? 'tag-outbound' : 'tag-pending'">
+                  {{ bc.status }}
+                </span>
                 <el-icon :size="14" class="download-icon"><Download /></el-icon>
               </div>
-              <BoxLabel :ref="el => setOutLabelRef(lb.barcode, el)"
+              <BoxLabel :ref="el => setOutLabelRef(bc.barcode, el)"
                 type="outbound"
-                :barcode="lb.barcode"
-                status="待出库"
+                :barcode="bc.barcode"
+                :status="bc.status"
                 :order-no="outDetailData.orderNo"
-                :created-at="outDetailData.createdAt" />
+                :created-at="bc.createdAt" />
             </div>
           </div>
         </div>
@@ -995,21 +998,24 @@ function setOutLabelRef(barcode, el) {
 /**
  * 下载出库箱单标签 PNG 图片。
  * 命名规则: 出库单号_箱N.png
- * @param {Object} lb 标签数据 { barcode, materialCode, boxSeq, boxCount }
+ * @param {Object} bc Barcode 对象 { barcode, status, ... }
  */
-function downloadOutLabel(lb, event) {
+function downloadOutLabel(bc, event) {
   event.stopPropagation()
-  const component = outLabelRefs[lb.barcode]
+  const component = outLabelRefs[bc.barcode]
   if (!component) return
   const canvas = component.getCanvas()
   if (!canvas) return
 
+  // 从条码字符串解析箱号: OUT|MAT|CK20260615...|15|90|15|3 → boxSeq=7
+  const parts = (bc.barcode || '').split('|')
+  const boxSeq = parts.length >= 7 ? parts[6] : '1'
   const orderNo = outDetailData.value?.orderNo || 'CK'
   canvas.toBlob((blob) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${orderNo}_箱${lb.boxSeq}.png`
+    a.download = `${orderNo}_箱${boxSeq}.png`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1146,7 +1152,9 @@ async function handleOutCreate() {
     ElMessage.success('出库单创建成功')
     outDialogVisible.value = false
     loadOutboundOrders()
-  } catch { /* */ }
+  } catch (err) {
+    ElMessage.error(err.message || '创建出库单失败')
+  }
 }
 
 // ==================== 确认出库 ====================
@@ -1232,26 +1240,6 @@ async function handleOutConfirmSubmit() {
 // ==================== 出库单详情 ====================
 const outDetailVisible = ref(false)
 const outDetailData = ref(null)
-
-/**
- * 根据出库明细的计划数和箱容量，计算每箱标签数据。
- * 每箱生成一个虚拟条码，格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
- * 供下载打印后用于扫码出库确认。
- */
-const outDetailLabels = computed(() => {
-  if (!outDetailData.value || !outDetailData.value.details) return []
-  const labels = []
-  outDetailData.value.details.forEach(d => {
-    const packCapacity = d.packCapacity || 1
-    const planQty = d.planQty || 0
-    const boxCount = Math.ceil(planQty / packCapacity)
-    for (let boxSeq = 1; boxSeq <= boxCount; boxSeq++) {
-      const barcode = `WMS|${d.materialCode}|OUT|${planQty}|${packCapacity}|0|${boxSeq}`
-      labels.push({ barcode, materialCode: d.materialCode, boxSeq, boxCount })
-    }
-  })
-  return labels
-})
 
 async function openOutDetailDialog(row) {
   outDetailData.value = null

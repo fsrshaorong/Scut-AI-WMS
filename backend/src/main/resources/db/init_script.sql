@@ -163,10 +163,12 @@ CREATE TABLE IF NOT EXISTS `outbound_histories` (
 CREATE TABLE IF NOT EXISTS `barcodes` (
   `id`            BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
   `material_code` VARCHAR(100) NOT NULL COMMENT '零件编码',
-  `supplier_code` VARCHAR(100) NOT NULL COMMENT '生产供应商',
+  `supplier_code` VARCHAR(100) NOT NULL COMMENT '生产供应商 / OUT',
   `barcode`       VARCHAR(150) NOT NULL UNIQUE COMMENT '唯一箱单标签条码号',
-  `inbound_id`    BIGINT DEFAULT NULL COMMENT '关联入库单主键ID，用于精确追溯条码来源',
-  `status`        VARCHAR(50) NOT NULL DEFAULT '待入库' COMMENT '条码生命周期: 待入库 / 在库 / 已出库',
+  `inbound_id`    BIGINT DEFAULT NULL COMMENT '关联入库单主键ID（入库条码）/ 关联出库单主键ID（出库标签）',
+  `type`          VARCHAR(20) NOT NULL DEFAULT 'inbound' COMMENT '条码类型: inbound(入库条码) / outbound(出库标签)',
+  `status`        VARCHAR(50) NOT NULL DEFAULT '待入库' COMMENT '条码生命周期: 待入库/在库/已出库(入库条码) | 待出库/已出库(出库标签)',
+  `remaining_qty` INT NOT NULL DEFAULT 0 COMMENT '当前剩余数量（入库条码拆箱后余量，出库标签为单箱数量）',
   `created_at`    DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at`    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
