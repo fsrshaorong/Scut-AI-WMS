@@ -10,6 +10,7 @@ import com.smartwms.entity.Barcode;
 import com.smartwms.entity.InboundDetail;
 import com.smartwms.entity.OutboundHistory;
 
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,18 +62,22 @@ public class InventoryTraceVO {
             item.setMaterialCode(bc.getMaterialCode());
             item.setSupplierCode(bc.getSupplierCode());
             item.setStatus(bc.getStatus());
-            item.setBarcodeCreatedAt(bc.getCreatedAt() != null ? bc.getCreatedAt().toString() : null);
-            item.setBarcodeUpdatedAt(bc.getUpdatedAt() != null ? bc.getUpdatedAt().toString() : null);
+            item.setBarcodeCreatedAt(bc.getCreatedAt() != null
+                    ? bc.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+            item.setBarcodeUpdatedAt(bc.getUpdatedAt() != null
+                    ? bc.getUpdatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             if (detail != null) {
                 item.setOrderNo(detail.getOrderNo());
                 item.setPackCapacity(detail.getPackCapacity());
                 item.setPlanQty(detail.getPlanQty());
                 item.setActualQty(detail.getActualQty());
-                item.setInboundCreatedAt(detail.getCreatedAt() != null ? detail.getCreatedAt().toString() : null);
+                item.setInboundCreatedAt(detail.getCreatedAt() != null
+                        ? detail.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             }
             if (outboundHistory != null) {
                 item.setOutboundOrderNo(outboundHistory.getOutboundOrderNo());
-                item.setOutboundAt(outboundHistory.getCreatedAt() != null ? outboundHistory.getCreatedAt().toString() : null);
+                item.setOutboundAt(outboundHistory.getCreatedAt() != null
+                        ? outboundHistory.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             }
             return item;
         }

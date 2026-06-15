@@ -4,6 +4,7 @@ import com.smartwms.entity.Barcode;
 import com.smartwms.entity.OutboundDetail;
 import com.smartwms.entity.OutboundOrder;
 
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
@@ -27,7 +28,8 @@ public class OutboundOrderVO {
         vo.setId(order.getId());
         vo.setOrderNo(order.getOrderNo());
         vo.setStatus(order.getStatus());
-        vo.setCreatedAt(order.getCreatedAt() != null ? order.getCreatedAt().toString() : null);
+        vo.setCreatedAt(order.getCreatedAt() != null
+                ? order.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
         vo.setDetails(details);
         vo.setBarcodes(barcodes);
         vo.setHistories(histories);

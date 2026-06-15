@@ -10,6 +10,7 @@ import com.smartwms.entity.Barcode;
 import com.smartwms.entity.InboundDetail;
 import com.smartwms.entity.InboundOrder;
 
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 
@@ -33,7 +34,8 @@ public class InboundOrderVO {
         vo.setOrderNo(order.getOrderNo());
         vo.setStatus(order.getStatus());
         vo.setSupplierCode(order.getSupplierCode());
-        vo.setCreatedAt(order.getCreatedAt() != null ? order.getCreatedAt().toString() : null);
+        vo.setCreatedAt(order.getCreatedAt() != null
+                ? order.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
         vo.setUpdatedAt(order.getUpdatedAt() != null ? order.getUpdatedAt().toString() : null);
         vo.setDetails(details);
         vo.setBarcodes(barcodes != null ? barcodes : Collections.emptyList());
