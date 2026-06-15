@@ -8,6 +8,7 @@ import com.smartwms.dto.ConfirmOutboundRequest;
 import com.smartwms.dto.OutboundHistoryVO;
 import com.smartwms.dto.OutboundOrderRequest;
 import com.smartwms.dto.OutboundOrderVO;
+import com.smartwms.dto.ScanResponse;
 import com.smartwms.entity.Barcode;
 import com.smartwms.entity.InboundDetail;
 import com.smartwms.entity.InboundOrder;
@@ -411,5 +412,148 @@ public class OutboundServiceImpl implements OutboundService {
         vo.setDeductQty(history.getDeductQty());
         vo.setCreatedAt(history.getCreatedAt());
         return vo;
+    }
+
+    /**
+     * 扫码出库：解析出库标签条码，按 FIFO 选取仓库条码并核销一箱。
+     * 条码格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ScanResponse scanOutbound(String barcodeStr) {
+        if (barcodeStr == null || !barcodeStr.startsWith("WMS|")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的出库标签条码格式");
+        }
+        String[] parts = barcodeStr.split("\\|");
+        if (parts.length < 7 || !"OUT".equals(parts[2])) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "非出库标签条码，请使用出库箱单标签");
+        }
+        String materialCode = parts[1];
+        int boxSeq;
+        try {
+            boxSeq = Integer.parseInt(parts[6]);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的箱号");
+        }
+
+        // 查找物料对应的未完成出库单
+        List<OutboundOrder> orders = outboundOrderMapper.selectList(
+                new LambdaQueryWrapper<OutboundOrder>()
+                        .ne(OutboundOrder::getStatus, "已完成")
+                        .orderByAsc(OutboundOrder::getCreatedAt)
+        );
+        OutboundOrder targetOrder = null;
+        OutboundDetail targetDetail = null;
+        for (OutboundOrder order : orders) {
+            List<OutboundDetail> details = outboundDetailMapper.selectList(
+                    new LambdaQueryWrapper<OutboundDetail>()
+                            .eq(OutboundDetail::getOutboundId, order.getId())
+                            .eq(OutboundDetail::getMaterialCode, materialCode)
+            );
+            for (OutboundDetail d : details) {
+                int planned = d.getPlanQty() != null ? d.getPlanQty() : 0;
+                int actual = d.getActualQty() != null ? d.getActualQty() : 0;
+                if (actual < planned) {
+                    targetOrder = order;
+                    targetDetail = d;
+                    break;
+                }
+            }
+            if (targetOrder != null) break;
+        }
+        if (targetOrder == null || targetDetail == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND,
+                    "未找到物料 " + materialCode + " 的待出库订单");
+        }
+
+        // 先校验库存
+        Inventory inventory = loadInventory(materialCode);
+        int stockQty = inventory.getStockQty() != null ? inventory.getStockQty() : 0;
+
+        // 按 FIFO 选取在库条码：排序依据 = 入库单创建时间 → 条码创建时间 → 条码 ID
+        List<Barcode> availableBarcodes = barcodeMapper.selectList(
+                new LambdaQueryWrapper<Barcode>()
+                        .eq(Barcode::getMaterialCode, materialCode)
+                        .eq(Barcode::getStatus, "在库")
+        );
+        if (availableBarcodes.isEmpty()) {
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                    "物料 " + materialCode + " 无在库条码，请先完成入库确认生成条码");
+        }
+
+        // FIFO 三级排序
+        Map<Long, InboundOrder> inboundOrderCache = new HashMap<>();
+        availableBarcodes = availableBarcodes.stream()
+                .filter(bc -> bc.getInboundId() != null)
+                .sorted(Comparator
+                        .comparing((Barcode bc) -> {
+                            InboundOrder io = inboundOrderCache.computeIfAbsent(
+                                    bc.getInboundId(), inboundOrderMapper::selectById);
+                            return io != null && io.getCreatedAt() != null
+                                    ? io.getCreatedAt() : LocalDateTime.MAX;
+                        })
+                        .thenComparing(Barcode::getCreatedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(Barcode::getId))
+                .toList();
+
+        if (availableBarcodes.isEmpty()) {
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                    "物料 " + materialCode + " 无有效在库条码（缺少入库来源信息）");
+        }
+
+        // FIFO 选取最早一箱
+        Barcode selectedBarcode = availableBarcodes.get(0);
+        InboundDetail inboundDetail = loadInboundDetailForBarcode(selectedBarcode, materialCode);
+        int deductQty = calculateBarcodeQty(selectedBarcode, inboundDetail);
+
+        if (stockQty < deductQty) {
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                    "库存不足：物料 " + materialCode + " 需要 " + deductQty
+                            + "，当前仅剩 " + stockQty);
+        }
+
+        // 记录出库流水
+        OutboundHistory history = new OutboundHistory();
+        history.setOutboundId(targetOrder.getId());
+        history.setOutboundOrderNo(targetOrder.getOrderNo());
+        history.setOutboundDetailId(targetDetail.getId());
+        history.setMaterialCode(materialCode);
+        history.setInboundId(selectedBarcode.getInboundId());
+        history.setInboundOrderNo(inboundDetail.getOrderNo());
+        history.setInboundDetailId(inboundDetail.getId());
+        history.setBarcodeId(selectedBarcode.getId());
+        history.setBarcode(selectedBarcode.getBarcode());
+        history.setDeductQty(deductQty);
+        outboundHistoryMapper.insert(history);
+
+        // 更新条码状态为"已出库"
+        selectedBarcode.setStatus("已出库");
+        barcodeMapper.updateById(selectedBarcode);
+
+        // 更新出库明细的实际数量
+        int currentActual = targetDetail.getActualQty() != null ? targetDetail.getActualQty() : 0;
+        targetDetail.setActualQty(currentActual + deductQty);
+        outboundDetailMapper.updateById(targetDetail);
+
+        // 扣减库存
+        inventory.setStockQty(stockQty - deductQty);
+        inventoryMapper.updateById(inventory);
+
+        // 更新出库单状态
+        List<OutboundDetail> allDetails = outboundDetailMapper.selectList(
+                new LambdaQueryWrapper<OutboundDetail>().eq(OutboundDetail::getOutboundId, targetOrder.getId())
+        );
+        boolean allCompleted = allDetails.stream().allMatch(d -> {
+            int plan = d.getPlanQty() != null ? d.getPlanQty() : 0;
+            int act = d.getActualQty() != null ? d.getActualQty() : 0;
+            return act >= plan;
+        });
+        boolean anyConfirmed = allDetails.stream().anyMatch(d -> (d.getActualQty() != null ? d.getActualQty() : 0) > 0);
+        targetOrder.setStatus(allCompleted ? "已完成" : (anyConfirmed ? "部分出库" : "未出库"));
+        outboundOrderMapper.updateById(targetOrder);
+
+        return ScanResponse.outbound(targetOrder.getOrderNo(), materialCode,
+                selectedBarcode.getBarcode(), deductQty);
     }
 }

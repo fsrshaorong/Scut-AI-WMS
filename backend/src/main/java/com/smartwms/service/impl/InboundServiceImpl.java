@@ -92,7 +92,7 @@ public class InboundServiceImpl implements InboundService {
             detail.setActualQty(0);
             inboundDetailMapper.insert(detail);
 
-            // 按箱数生成条码，追加入库单号保证跨批次唯一。
+            // 按箱数生成条码，每箱时间错开以确保 FIFO 排序可区分
             int boxCount = (int) Math.ceil((double) item.getPlanQty() / item.getPackCapacity());
             for (int i = 0; i < boxCount; i++) {
                 String barcodeStr = buildBarcode(item.getMaterialCode(), request.getSupplierCode(), item.getPlanQty(),
@@ -104,6 +104,11 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
                 barcodeMapper.insert(barcode);
+                // 逐箱错开 1 秒，确保 FIFO 排序可区分
+                Barcode updateTime = new Barcode();
+                updateTime.setId(barcode.getId());
+                updateTime.setCreatedAt(LocalDateTime.now().plusSeconds(i));
+                barcodeMapper.updateById(updateTime);
             }
         }
 
@@ -251,6 +256,11 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
                 barcodeMapper.insert(barcode);
+                // 逐箱错开 1 秒，确保 FIFO 排序可区分
+                Barcode updateTime2 = new Barcode();
+                updateTime2.setId(barcode.getId());
+                updateTime2.setCreatedAt(LocalDateTime.now().plusSeconds(i));
+                barcodeMapper.updateById(updateTime2);
             }
         }
 

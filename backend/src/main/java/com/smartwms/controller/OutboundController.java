@@ -6,7 +6,11 @@ import com.smartwms.dto.ConfirmOutboundRequest;
 import com.smartwms.dto.OutboundHistoryVO;
 import com.smartwms.dto.OutboundOrderRequest;
 import com.smartwms.dto.OutboundOrderVO;
+import com.smartwms.dto.ScanInboundRequest;
+import com.smartwms.dto.ScanResponse;
+import com.smartwms.dto.ScanInboundVO;
 import com.smartwms.entity.OutboundOrder;
+import com.smartwms.service.InboundService;
 import com.smartwms.service.OutboundService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,16 +23,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 出库管理控制器。
+ * 出库管理及统一扫码控制器。
  */
 @RestController
 @RequestMapping("/api/outbound")
 public class OutboundController {
 
     private final OutboundService outboundService;
+    private final InboundService inboundService;
 
-    public OutboundController(OutboundService outboundService) {
+    public OutboundController(OutboundService outboundService,
+                              InboundService inboundService) {
         this.outboundService = outboundService;
+        this.inboundService = inboundService;
     }
 
     /**
@@ -75,5 +82,23 @@ public class OutboundController {
                                                          @RequestParam(required = false) String orderNo,
                                                          @RequestParam(required = false) String materialCode) {
         return Result.success(outboundService.pageHistories(page, size, orderNo, materialCode));
+    }
+
+    /**
+     * 统一扫码入口：自动判定条码类型（入库/出库）并执行对应操作。
+     * 出库标签条码格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
+     */
+    @PostMapping("/scan")
+    public Result<ScanResponse> unifiedScan(@Valid @RequestBody ScanInboundRequest request) {
+        String barcode = request.getBarcode().trim();
+        // 解析条码第三个字段：OUT → 出库标签，其他 → 入库条码
+        String[] parts = barcode.split("\\|");
+        if (parts.length >= 3 && "OUT".equals(parts[2])) {
+            // 出库标签 → 扫码出库
+            return Result.success("扫码出库成功", outboundService.scanOutbound(barcode));
+        }
+        // 入库条码 → 扫码入库
+        ScanInboundVO inboundResult = inboundService.scanReceive(request);
+        return Result.success("扫码入库成功", ScanResponse.inbound(inboundResult));
     }
 }

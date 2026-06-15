@@ -45,3 +45,11 @@ export function confirmOutbound(id, data) {
 export function getOutboundHistories(params) {
   return request.get('/outbound/histories', { params })
 }
+
+/**
+ * 统一扫码：自动判定入库/出库条码并执行对应操作。
+ * @param {Object} data { barcode }
+ */
+export function unifiedScan(data) {
+  return request.post('/outbound/scan', data)
+}

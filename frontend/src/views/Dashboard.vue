@@ -43,10 +43,10 @@
       </div>
     </div>
 
-    <!-- 扫码入库快捷入口 -->
+    <!-- 扫码出入库快捷入口 -->
     <div class="content-block scan-block">
       <div class="block-header">
-        <span class="block-title">扫码入库</span>
+        <span class="block-title">扫码出入库</span>
       </div>
       <div class="scan-row">
         <el-button size="large" @click="scannerRef?.openCamera()">
@@ -58,22 +58,28 @@
           <span>上传图片</span>
         </el-button>
       </div>
-      <div v-if="scanResult" class="scan-result">
+      <div v-if="scanResult" class="scan-result" :class="scanResult.type === 'outbound' ? 'scan-outbound' : 'scan-inbound'">
+        <div class="qr-row">
+          <span class="qr-label">类型</span>
+          <span class="badge" :class="scanResult.type === 'outbound' ? 'badge-default' : 'badge-success'">
+            {{ scanResult.type === 'outbound' ? '出库' : '入库' }}
+          </span>
+        </div>
         <div class="qr-row">
           <span class="qr-label">物料号</span>
           <span class="qr-value">{{ scanResult.materialCode }}</span>
         </div>
         <div class="qr-row">
-          <span class="qr-label">供应商</span>
-          <span class="qr-value">{{ scanResult.supplierCode }}</span>
-        </div>
-        <div class="qr-row">
-          <span class="qr-label">入库单号</span>
+          <span class="qr-label">{{ scanResult.type === 'outbound' ? '出库单号' : '入库单号' }}</span>
           <span class="qr-value">{{ scanResult.orderNo }}</span>
         </div>
         <div class="qr-row">
-          <span class="qr-label">状态</span>
-          <span class="badge badge-success">已确认入库</span>
+          <span class="qr-label">数量</span>
+          <span class="qr-value">{{ scanResult.qty }} 件</span>
+        </div>
+        <div class="qr-row">
+          <span class="qr-label">条码</span>
+          <span class="qr-value" style="font-size:11px;word-break:break-all">{{ scanResult.barcode }}</span>
         </div>
       </div>
       <div v-if="scanError" class="scan-error">
@@ -163,10 +169,10 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { getStockReport } from '@/api/stock'
 import { getLatestReport, triggerPredict } from '@/api/ai'
-import { scanInbound, getInboundOrders } from '@/api/inbound'
-import { getOutboundOrders } from '@/api/outbound'
+import { getInboundOrders } from '@/api/inbound'
+import { getOutboundOrders, unifiedScan } from '@/api/outbound'
 import { ElMessage, ElNotification } from 'element-plus'
-import { WarningFilled, Camera, Upload } from '@element-plus/icons-vue'
+import { WarningFilled, Camera, Upload, Search } from '@element-plus/icons-vue'
 import BarcodeScanner from '@/components/BarcodeScanner.vue'
 import ChartCard from '@/components/ChartCard.vue'
 
@@ -317,17 +323,18 @@ function startAlertPolling() {
   }, 60000)
 }
 
-// ==================== 扫码入库 ====================
+// ==================== 扫码出入库 ====================
 async function onBarcodeScanned(code) {
   scanResult.value = null
   scanError.value = ''
   try {
-    const data = await scanInbound({ barcode: code })
+    const data = await unifiedScan({ barcode: code })
     scanResult.value = data
-    ElMessage.success(`入库成功：${data.materialCode}`)
+    const label = data.type === 'outbound' ? '出库' : '入库'
+    ElMessage.success(`扫码${label}成功：${data.materialCode}，${data.qty} 件`)
     loadData()
   } catch (err) {
-    scanError.value = err.message || '入库失败'
+    scanError.value = err.message || '扫码失败'
   }
 }
 
@@ -378,7 +385,9 @@ function riskLabel(v) {
 /* 扫码 */
 .scan-block { margin-bottom: 16px; }
 .scan-row { display: flex; align-items: center; justify-content: center; gap: 16px; }
-.scan-result { margin-top: 12px; padding: 12px; background: #f0f9eb; border-radius: 4px; border: 1px solid #e1f3d8; }
+.scan-result { margin-top: 12px; padding: 12px; border-radius: 4px; }
+.scan-inbound { background: #f0f9eb; border: 1px solid #e1f3d8; }
+.scan-outbound { background: #f4f4f5; border: 1px solid #e4e7ed; }
 .scan-error { margin-top: 12px; padding: 10px 14px; background: #fef0f0; border-radius: 4px; color: #f56c6c; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 
 /* 工作区 */

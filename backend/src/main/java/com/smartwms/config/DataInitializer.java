@@ -126,6 +126,9 @@ public class DataInitializer implements CommandLineRunner {
         // 5. 库存（覆盖 NORMAL / LOW_STOCK / HIGH 三种水位）
         seedInventories();
 
+        // 5.5. 为种子库存生成虚拟入库单和条码，确保所有物料可追溯时间、支持 FIFO
+        seedBarcodesForInventory();
+
         // 6. AI 报告（覆盖 SUCCESS / MOCKED / PENDING + 各风险类型）
         seedAiReports();
 
@@ -369,6 +372,99 @@ public class DataInitializer implements CommandLineRunner {
             inventory.setMinStockDays(minDays);
             inventory.setMaxStockDays(maxDays);
             inventoryMapper.insert(inventory);
+        }
+    }
+
+    // ==================== 种子库存 → 虚拟入库单 + 条码（FIFO 时间追溯） ====================
+
+    /**
+     * 为种子库存的每种物料生成一条虚拟入库单和对应条码。
+     * 入库时间按物料序号错开（每往前一天一批），同一入库单内各箱时间逐毫秒递增。
+     * 确保所有库存物料都有可追溯的时间戳，满足 FIFO 先进先出排序。
+     */
+    private void seedBarcodesForInventory() {
+        // 跳过已有条码的物料（避免重复初始化）
+        if (barcodeMapper.selectCount(null) > 0) {
+            log.info("[初始化] 条码表已有数据，跳过种子条码生成");
+            return;
+        }
+
+        LocalDateTime baseTime = LocalDateTime.now().minusDays(30); // 最早一批 30 天前入库
+        java.util.List<Inventory> inventories = inventoryMapper.selectList(null);
+
+        for (int i = 0; i < inventories.size(); i++) {
+            Inventory inv = inventories.get(i);
+            String materialCode = inv.getMaterialCode();
+            int stockQty = inv.getStockQty() != null ? inv.getStockQty() : 0;
+            if (stockQty <= 0) continue;
+
+            // 查找物料对应的供应商
+            Material material = materialMapper.selectOne(
+                    new LambdaQueryWrapper<Material>().eq(Material::getMaterialCode, materialCode)
+            );
+            String supplierCode = material != null ? material.getSupplierCode() : "SUP_VWG_09";
+
+            // 查找器具包装容量（默认 20）
+            int packCapacity = 20;
+            Appliance appliance = applianceMapper.selectOne(
+                    new LambdaQueryWrapper<Appliance>()
+                            .eq(Appliance::getMaterialCode, materialCode)
+                            .eq(Appliance::getSupplierCode, supplierCode)
+            );
+            if (appliance != null && appliance.getPackCapacity() != null && appliance.getPackCapacity() > 0) {
+                packCapacity = appliance.getPackCapacity();
+            }
+
+            // 创建虚拟入库单（每条物料错开 2 天，确保 FIFO 顺序明显）
+            LocalDateTime orderTime = baseTime.plusDays(i * 2L);
+            String orderNo = "INIT" + orderTime.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            InboundOrder order = new InboundOrder();
+            order.setOrderNo(orderNo);
+            order.setSupplierCode(supplierCode);
+            order.setStatus("已完成");
+            // MyBatis-Plus 自动填充会覆盖 createdAt，需要绕过
+            inboundOrderMapper.insert(order);
+            // 手动更新 createdAt 为指定时间
+            InboundOrder updateOrder = new InboundOrder();
+            updateOrder.setId(order.getId());
+            updateOrder.setCreatedAt(orderTime);
+            inboundOrderMapper.updateById(updateOrder);
+            order.setCreatedAt(orderTime);
+
+            // 创建入库明细
+            InboundDetail detail = new InboundDetail();
+            detail.setInboundId(order.getId());
+            detail.setOrderNo(orderNo);
+            detail.setMaterialCode(materialCode);
+            detail.setPackCapacity(packCapacity);
+            detail.setPlanQty(stockQty);
+            detail.setActualQty(stockQty);
+            inboundDetailMapper.insert(detail);
+
+            // 生成条码（每箱一个，时间逐毫秒递增）
+            int boxCount = (int) Math.ceil((double) stockQty / packCapacity);
+            for (int boxSeq = 1; boxSeq <= boxCount; boxSeq++) {
+                int lastQty = stockQty - packCapacity * (boxCount - 1);
+                int actualQty = (boxSeq < boxCount) ? packCapacity : (lastQty > 0 ? lastQty : packCapacity);
+                String barcode = String.format("WMS|%s|%s|%d|%d|%d|%d",
+                        materialCode, supplierCode, stockQty, packCapacity, actualQty, boxSeq);
+
+                Barcode bc = new Barcode();
+                bc.setMaterialCode(materialCode);
+                bc.setSupplierCode(supplierCode);
+                bc.setBarcode(barcode);
+                bc.setInboundId(order.getId());
+                bc.setStatus("在库");
+                barcodeMapper.insert(bc);
+
+                // 每箱错开 1 毫秒，确保同物料内 FIFO 可区分
+                LocalDateTime barcodeTime = orderTime.plusNanos(boxSeq * 1000000L);
+                Barcode updateBc = new Barcode();
+                updateBc.setId(bc.getId());
+                updateBc.setCreatedAt(barcodeTime);
+                barcodeMapper.updateById(updateBc);
+            }
+            log.info("[初始化] 物料 {} 生成 {} 箱种子条码（入库时间: {}）", materialCode, boxCount, orderTime);
         }
     }
 
