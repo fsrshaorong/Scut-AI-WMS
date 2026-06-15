@@ -513,7 +513,26 @@
           <el-table-column prop="planQty" label="计划数" width="80" align="right" />
           <el-table-column prop="actualQty" label="实出数" width="80" align="right" />
         </el-table>
-        <!-- 出库流水 -->
+        <!-- 出库标签画廊（创建时即根据明细生成，可下载打印后用于扫码出库） -->
+        <div v-if="outDetailData && outDetailLabels.length > 0" class="barcode-gallery">
+          <div class="barcode-gallery-title">出库标签（共 {{ outDetailLabels.length }} 个，点击可下载完整标签）</div>
+          <div class="label-grid">
+            <div v-for="(lb, i) in outDetailLabels" :key="lb.barcode" class="label-card"
+              @click="downloadOutLabel(lb, $event)">
+              <div class="label-card-header">
+                <span class="barcode-status-tag tag-pending">待出库</span>
+                <el-icon :size="14" class="download-icon"><Download /></el-icon>
+              </div>
+              <BoxLabel :ref="el => setOutLabelRef(lb.barcode, el)"
+                type="outbound"
+                :barcode="lb.barcode"
+                status="待出库"
+                :order-no="outDetailData.orderNo"
+                :created-at="outDetailData.createdAt" />
+            </div>
+          </div>
+        </div>
+        <!-- 出库流水（确认后显示） -->
         <div v-if="outDetailData && outDetailData.histories && outDetailData.histories.length > 0"
           style="margin-top: 16px">
           <div class="barcode-gallery-title">出库流水（共 {{ outDetailData.histories.length }} 条）</div>
@@ -524,7 +543,6 @@
             <el-table-column prop="createdAt" label="出库时间" width="170" show-overflow-tooltip />
           </el-table>
         </div>
-        <div v-else class="empty-hint" style="padding: 30px 0">暂无出库流水</div>
         <template #footer>
           <el-button @click="outDetailVisible = false">关闭</el-button>
         </template>
@@ -941,7 +959,8 @@ function parseBarcodeForFilename(str) {
 }
 
 /**
- * 下载完整箱单标签 PNG 图片。
+ * 下载入库箱单标签 PNG 图片。
+ * 命名规则: 入库单号_箱N.png
  */
 function downloadLabel(bc, event) {
   event.stopPropagation()
@@ -951,11 +970,46 @@ function downloadLabel(bc, event) {
   if (!canvas) return
 
   const info = parseBarcodeForFilename(bc.barcode)
+  const orderNo = detailData.value?.orderNo || 'RK'
   canvas.toBlob((blob) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${info.materialCode}_箱${info.boxSeq}.png`
+    a.download = `${orderNo}_箱${info.boxSeq}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('标签已下载')
+  }, 'image/png')
+}
+
+// ==================== 出库标签下载 ====================
+/** 存储每个出库标签组件的引用，用于导出完整标签图片 */
+const outLabelRefs = {}
+
+function setOutLabelRef(barcode, el) {
+  if (el) outLabelRefs[barcode] = el
+}
+
+/**
+ * 下载出库箱单标签 PNG 图片。
+ * 命名规则: 出库单号_箱N.png
+ * @param {Object} lb 标签数据 { barcode, materialCode, boxSeq, boxCount }
+ */
+function downloadOutLabel(lb, event) {
+  event.stopPropagation()
+  const component = outLabelRefs[lb.barcode]
+  if (!component) return
+  const canvas = component.getCanvas()
+  if (!canvas) return
+
+  const orderNo = outDetailData.value?.orderNo || 'CK'
+  canvas.toBlob((blob) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${orderNo}_箱${lb.boxSeq}.png`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1168,7 +1222,9 @@ async function handleOutConfirmSubmit() {
     ElMessage.success('出库确认成功')
     outConfirmVisible.value = false
     loadOutboundOrders()
-  } catch { /* 后端会返回 FIFO 等校验错误 */ } finally {
+  } catch (err) {
+    ElMessage.error(err.message || '出库确认失败，请检查条码是否正确且符合先进先出规则')
+  } finally {
     outConfirmSubmitting.value = false
   }
 }
@@ -1176,6 +1232,26 @@ async function handleOutConfirmSubmit() {
 // ==================== 出库单详情 ====================
 const outDetailVisible = ref(false)
 const outDetailData = ref(null)
+
+/**
+ * 根据出库明细的计划数和箱容量，计算每箱标签数据。
+ * 每箱生成一个虚拟条码，格式: WMS|<materialCode>|OUT|<planQty>|<packCapacity>|0|<boxSeq>
+ * 供下载打印后用于扫码出库确认。
+ */
+const outDetailLabels = computed(() => {
+  if (!outDetailData.value || !outDetailData.value.details) return []
+  const labels = []
+  outDetailData.value.details.forEach(d => {
+    const packCapacity = d.packCapacity || 1
+    const planQty = d.planQty || 0
+    const boxCount = Math.ceil(planQty / packCapacity)
+    for (let boxSeq = 1; boxSeq <= boxCount; boxSeq++) {
+      const barcode = `WMS|${d.materialCode}|OUT|${planQty}|${packCapacity}|0|${boxSeq}`
+      labels.push({ barcode, materialCode: d.materialCode, boxSeq, boxCount })
+    }
+  })
+  return labels
+})
 
 async function openOutDetailDialog(row) {
   outDetailData.value = null
@@ -1435,6 +1511,7 @@ async function loadHistories() {
 }
 .tag-in-stock { background: #f0f9eb; color: #67c23a; }
 .tag-pending { background: #fdf6ec; color: #e6a23c; }
+.tag-outbound { background: #f4f4f5; color: #909399; }
 
 /* ==================== 打印预览 ==================== */
 .print-area {

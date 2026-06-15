@@ -27,6 +27,8 @@ const props = defineProps({
   orderNo: { type: String, default: '' },
   /** 创建时间（兼容 ISO 字符串和 Jackson 数组格式） */
   createdAt: { type: [String, Array], default: '' },
+  /** 标签类型：inbound（入库箱单） / outbound（出库箱单） */
+  type: { type: String, default: 'inbound' },
 })
 
 const canvasRef = ref(null)
@@ -102,11 +104,12 @@ async function drawLabel(canvas) {
   ctx.strokeRect(8, 8, CANVAS_WIDTH - 16, CANVAS_HEIGHT - 16)
 
   // ==================== 标题栏 ====================
+  const isOutbound = props.type === 'outbound'
   const titleY = 38
   ctx.fillStyle = '#2c3e50'
   ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('智库 WMS — 入库箱单标签', CANVAS_WIDTH / 2, titleY)
+  ctx.fillText(isOutbound ? '智库 WMS — 出库箱单标签' : '智库 WMS — 入库箱单标签', CANVAS_WIDTH / 2, titleY)
 
   // 标题下方分隔线
   ctx.strokeStyle = '#2c3e50'
@@ -171,7 +174,7 @@ async function drawLabel(canvas) {
 
   drawInfoLine('物料编码：', info.materialCode)
   drawInfoLine('供应商：', info.supplierCode)
-  drawInfoLine('入库单号：', props.orderNo || '—')
+  drawInfoLine(isOutbound ? '出库单号：' : '入库单号：', props.orderNo || '—')
   drawInfoLine('计划数量：', String(info.planQty))
   drawInfoLine('单箱容量：', String(info.packCapacity))
   drawInfoLine('箱　　号：', `${info.boxSeq} / ${totalBoxes}`)
@@ -229,7 +232,7 @@ function getCanvas() {
 }
 
 onMounted(() => { render() })
-watch(() => [props.barcode, props.status, props.orderNo, props.createdAt], () => { render() })
+watch(() => [props.barcode, props.status, props.orderNo, props.createdAt, props.type], () => { render() })
 
 defineExpose({ getCanvas })
 </script>
