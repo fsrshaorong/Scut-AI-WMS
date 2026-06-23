@@ -64,18 +64,27 @@ public class InboundServiceImpl implements InboundService {
     }
 
     /**
-     * 根据物料编码和供应商查询器具包装容量。
-     * 若未找到器具配置则抛出业务异常。
+     * 根据物料编码查询器具包装容量。
+     * 优先按 物料+供应商 精确匹配，若未找到则按物料模糊匹配（支持多供应商物料）。
      */
     private int getPackCapacity(String materialCode, String supplierCode) {
+        // 优先精确匹配
         Appliance appliance = applianceMapper.selectOne(
                 new LambdaQueryWrapper<Appliance>()
                         .eq(Appliance::getMaterialCode, materialCode)
                         .eq(Appliance::getSupplierCode, supplierCode)
         );
+        // 回退：按物料编码匹配任意供应商
+        if (appliance == null) {
+            appliance = applianceMapper.selectOne(
+                    new LambdaQueryWrapper<Appliance>()
+                            .eq(Appliance::getMaterialCode, materialCode)
+                            .last("limit 1")
+            );
+        }
         if (appliance == null || appliance.getPackCapacity() == null || appliance.getPackCapacity() <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "物料 " + materialCode + " 在供应商 " + supplierCode + " 下未配置器具包装容量，请先到器具管理页面配置。");
+                    "物料 " + materialCode + " 未配置器具包装容量，请先到器具管理页面配置。");
         }
         return appliance.getPackCapacity();
     }
