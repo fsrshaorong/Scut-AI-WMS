@@ -23,15 +23,10 @@
       <div class="stat-tip">
         <span>最后更新：{{ lastUpdateTime }}</span>
         <el-button text size="small" @click="loadData">刷新数据</el-button>
-        <el-button text size="small" @click="doPrintDashboard">打印看板</el-button>
+
       </div>
     </div>
 
-    <!-- 打印专用标题 -->
-    <div class="print-only-header">
-      <h2>智库 WMS — 库存看板</h2>
-      <span>打印时间：{{ new Date().toLocaleString('zh-CN') }}</span>
-    </div>
 
     <!-- 图表区域 -->
     <div class="chart-row">
@@ -351,7 +346,6 @@ async function handleTriggerPredict() {
   catch { ElMessage.error('启动失败') }
 }
 
-function doPrintDashboard() { window.print() }
 
 // 辅助
 function badgeClass(v) {
@@ -417,20 +411,5 @@ function riskLabel(v) {
 .badge-danger  { background: #fef0f0; color: #f56c6c; }
 .badge-default { background: #f4f4f5; color: #909399; }
 
-.print-only-header { display: none; }
-.print-only-header h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
-.print-only-header span { font-size: 13px; color: var(--text-secondary); }
 
-@media print {
-  body { background: white !important; }
-  .admin-sidebar, .admin-header, .stat-tip, .work-right, .scan-block, .chart-row { display: none !important; }
-  .admin-content { margin-left: 0 !important; padding: 0 !important; }
-  .page-container { padding: 10px !important; }
-  .content-block { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; }
-  .stat-row { break-inside: avoid; border: 1px solid #ccc; padding: 12px; }
-  .work-area { flex-direction: column !important; }
-  .work-left { width: 100% !important; }
-  .print-only-header { display: block; text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #333; }
-  .badge { border: 1px solid #999 !important; }
-}
 </style>
