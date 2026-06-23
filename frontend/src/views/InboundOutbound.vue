@@ -112,24 +112,37 @@
       </el-tabs>
     </div>
 
-    <!-- 新建入库单对话框 (Teleport to body) -->
-    <Teleport to="body">
-      <el-dialog v-model="dialogVisible" title="新建入库单"
-        width="min(960px, calc(100vw - 32px))" destroy-on-close class="inbound-dialog"
-        @opened="onCreateDialogOpened">
+    <!-- 新建入库单右侧抽屉 -->
+    <el-drawer v-model="dialogVisible" title="新建入库单"
+      direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
+      @opened="onCreateDialogOpened">
         <el-alert v-if="isAiDraft" title="已根据 AI 建议预填物料和计划数量，请选择供应商后保存。"
           type="info" show-icon :closable="false" class="draft-alert" />
         <el-form ref="formRef" :model="inboundForm" :rules="inboundRules" label-width="88px">
-          <el-form-item label="供应商" prop="supplierCode">
-            <el-select v-model="inboundForm.supplierCode" placeholder="请选择供应商" style="width: 100%"
-              filterable @change="onSupplierChange">
-              <el-option v-for="s in supplierOptions" :key="s.supplierCode"
-                :label="`${s.supplierName} (${s.supplierCode})`" :value="s.supplierCode" />
-            </el-select>
+          <el-form-item label="供应商" prop="selectedSuppliers" :rules="[{ type: 'array', min: 1, message: '请至少添加一个供应商', trigger: 'change' }]">
+            <div class="supplier-tags">
+              <el-tag v-for="sc in inboundForm.selectedSuppliers" :key="sc"
+                closable size="default" @close="removeSupplier(sc)"
+                type="primary" effect="light">
+                {{ getSupplierName(sc) }}
+              </el-tag>
+              <span class="supplier-pick-group">
+                <el-select v-model="pendingSuppliers" placeholder="选择供应商"
+                  multiple filterable size="small" style="width: 220px"
+                  :disabled="availableSuppliers.length === 0"
+                  popper-class="supplier-select-popper"
+                  collapse-tags collapse-tags-tooltip :max-collapse-tags="1">
+                  <el-option v-for="s in availableSuppliers" :key="s.supplierCode"
+                    :label="`${s.supplierName} (${s.supplierCode})`" :value="s.supplierCode" />
+                </el-select>
+                <el-button size="small" type="primary" :disabled="pendingSuppliers.length === 0"
+                  @click="confirmAddSuppliers" :icon="Plus" circle />
+              </span>
+            </div>
           </el-form-item>
 
-          <!-- 物料目录（批量选择） -->
-          <el-form-item v-if="inboundForm.supplierCode" label="物料目录">
+          <!-- 物料目录（批量选择 — 聚合所有选中供应商的物料） -->
+          <el-form-item v-if="inboundForm.selectedSuppliers.length > 0" label="物料目录">
             <div class="catalog-panel">
               <div class="catalog-toolbar">
                 <el-input v-model="catalogSearch" placeholder="搜索物料号或名称" size="small"
@@ -142,9 +155,14 @@
                 <el-table :data="filteredCatalog" size="small" max-height="200"
                   @selection-change="onCatalogSelect" ref="catalogTableRef" row-key="materialCode">
                   <el-table-column type="selection" width="36" :selectable="catalogSelectable" />
-                  <el-table-column prop="materialCode" label="物料号" width="140" />
-                  <el-table-column prop="materialName" label="物料名称" min-width="140" show-overflow-tooltip />
-                  <el-table-column label="器具类型" width="110">
+                  <el-table-column prop="materialCode" label="物料号" width="130" />
+                  <el-table-column prop="materialName" label="物料名称" min-width="120" show-overflow-tooltip />
+                  <el-table-column label="供应商" width="120" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <span class="supplier-code-text">{{ row._supplierCode || '' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="器具类型" width="100">
                     <template #default="{ row }">
                       <span :class="{ 'text-warn': !row._appliance }">{{ row._packType || '未配置' }}</span>
                     </template>
@@ -200,11 +218,11 @@
                 <div v-for="(item, idx) in inboundForm.details" :key="idx" class="detail-row detail-row-7">
                   <span class="col-seq seq-num">{{ idx + 1 }}</span>
                   <el-select v-model="item.materialCode"
-                    :placeholder="inboundForm.supplierCode ? '搜索物料号' : '请先选择供应商'"
+                    :placeholder="inboundForm.selectedSuppliers.length > 0 ? '搜索物料号' : '请先添加供应商'"
                     size="small" filterable remote
                     :remote-method="(q) => searchMaterials(q, idx)"
                     :loading="materialSearchLoading[idx]" clearable style="width: 100%"
-                    :disabled="!inboundForm.supplierCode"
+                    :disabled="inboundForm.selectedSuppliers.length === 0"
                     @focus="searchMaterials('', idx)"
                     @change="(val) => fetchPackCapacity(idx, val)">
                     <el-option v-for="m in materialOptions[idx]" :key="m.materialCode"
@@ -241,8 +259,7 @@
             </div>
           </div>
         </template>
-      </el-dialog>
-    </Teleport>
+    </el-drawer>
 
     <!-- 确认入库对话框 (Teleport to body) -->
     <Teleport to="body">
@@ -337,11 +354,10 @@
       </el-dialog>
     </Teleport>
 
-    <!-- 修改入库单对话框 (Teleport to body) -->
-    <Teleport to="body">
-      <el-dialog v-model="editVisible" title="修改入库单"
-        width="min(960px, calc(100vw - 32px))" destroy-on-close
-        @opened="onEditDialogOpened">
+    <!-- 修改入库单右侧抽屉 -->
+    <el-drawer v-model="editVisible" title="修改入库单"
+      direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
+      @opened="onEditDialogOpened">
         <el-alert title="修改后需重新确认入库，原确认信息将被清除。"
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="editFormRef" :model="editForm" :rules="inboundRules" label-width="88px">
@@ -417,11 +433,10 @@
                 <div v-for="(item, idx) in editForm.details" :key="idx" class="detail-row detail-row-7">
                   <span class="col-seq seq-num">{{ idx + 1 }}</span>
                   <el-select v-model="item.materialCode"
-                    :placeholder="editForm.supplierCode ? '搜索物料号' : '请先选择供应商'"
+                    placeholder="搜索物料号"
                     size="small" filterable remote
                     :remote-method="(q) => searchEditMaterials(q, idx)"
                     :loading="editMaterialLoading[idx]" clearable style="width: 100%"
-                    :disabled="!editForm.supplierCode"
                     @focus="searchEditMaterials('', idx)"
                     @change="(val) => fetchEditPackCapacity(idx, val)">
                     <el-option v-for="m in editMaterialOptions[idx]" :key="m.materialCode"
@@ -454,8 +469,7 @@
             </div>
           </div>
         </template>
-      </el-dialog>
-    </Teleport>
+    </el-drawer>
 
     <!-- 打印入库单对话框 (Teleport to body) -->
     <Teleport to="body">
@@ -512,11 +526,10 @@
       </el-dialog>
     </Teleport>
 
-    <!-- 新建出库单对话框 (Teleport to body) -->
-    <Teleport to="body">
-      <el-dialog v-model="outDialogVisible" title="新建出库单"
-        width="min(960px, calc(100vw - 32px))" destroy-on-close class="inbound-dialog"
-        @opened="onOutDialogOpened">
+    <!-- 新建出库单右侧抽屉 -->
+    <el-drawer v-model="outDialogVisible" title="新建出库单"
+      direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
+      @opened="onOutDialogOpened">
         <el-form ref="outFormRef" :model="outboundForm" label-width="88px">
 
           <!-- 物料目录（全部物料） -->
@@ -622,8 +635,7 @@
             </div>
           </div>
         </template>
-      </el-dialog>
-    </Teleport>
+    </el-drawer>
 
     <!-- 确认出库对话框 (Teleport to body) -->
     <Teleport to="body">
@@ -750,11 +762,10 @@
       </el-dialog>
     </Teleport>
 
-    <!-- 修改出库单对话框 (Teleport to body) -->
-    <Teleport to="body">
-      <el-dialog v-model="outEditVisible" title="修改出库单"
-        width="min(960px, calc(100vw - 32px))" destroy-on-close
-        @opened="onOutEditDialogOpened">
+    <!-- 修改出库单右侧抽屉 -->
+    <el-drawer v-model="outEditVisible" title="修改出库单"
+      direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
+      @opened="onOutEditDialogOpened">
         <el-alert title="修改后将重新执行整箱拣选，原出库标签将被替换。"
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="outEditFormRef" :model="outEditForm" label-width="88px">
@@ -856,8 +867,7 @@
             </div>
           </div>
         </template>
-      </el-dialog>
-    </Teleport>
+    </el-drawer>
 
     <!-- 出库流水查询对话框 (Teleport to body) -->
     <Teleport to="body">
@@ -935,6 +945,14 @@ const outEditCatalogSearch = ref('')
 const outEditCatalogTableRef = ref(null)
 const outEditUniformBoxCount = ref(1)
 
+const pendingSuppliers = ref([]) // 待确认的多选供应商
+
+// ==================== 供应商多选计算属性 ====================
+/** 未被选中的供应商列表（el-select 自带搜索过滤） */
+const availableSuppliers = computed(() =>
+  supplierOptions.value.filter(s => !inboundForm.selectedSuppliers.includes(s.supplierCode))
+)
+
 // ==================== 汇总计算 ====================
 const inboundTotalBoxes = computed(() =>
   inboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) : 0), 0)
@@ -995,7 +1013,7 @@ const formRef = ref(null)
 const isAiDraft = ref(false)
 
 const inboundForm = reactive({
-  supplierCode: '',
+  selectedSuppliers: [],
   details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
 })
 const inboundRules = {
@@ -1077,18 +1095,16 @@ async function loadSuppliers() {
  */
 async function searchMaterials(query, idx) {
   // 未选供应商时不发起搜索
-  if (!inboundForm.supplierCode) {
+  if (inboundForm.selectedSuppliers.length === 0) {
     materialOptions.value[idx] = []
     return
   }
   materialSearchLoading.value[idx] = true
   try {
-    const data = await getMaterials({
-      page: 1, size: 20,
-      keyword: query || undefined,
-      supplierCode: inboundForm.supplierCode
-    })
-    materialOptions.value[idx] = data.records || []
+    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
+    // 仅显示选中供应商的物料
+    const supplierSet = new Set(inboundForm.selectedSuppliers)
+    materialOptions.value[idx] = (data.records || []).filter(m => supplierSet.has(m.supplierCode))
   } catch {
     materialOptions.value[idx] = []
   } finally {
@@ -1098,18 +1114,17 @@ async function searchMaterials(query, idx) {
 
 /**
  * 当物料被选中时，自动从器具配置获取包装容量和器具类型（只读）。
+ * 按物料编码匹配，不限定供应商。
  */
 async function fetchPackCapacity(idx, materialCode) {
-  if (!materialCode || !inboundForm.supplierCode) {
+  if (!materialCode) {
     inboundForm.details[idx].packType = ''
     inboundForm.details[idx].packCapacity = 0
     return
   }
   try {
-    const data = await getAppliances({ page: 1, size: 10, keyword: materialCode })
-    const match = (data.records || []).find(
-      a => a.materialCode === materialCode && a.supplierCode === inboundForm.supplierCode
-    )
+    const data = await getAppliances({ page: 1, size: 20, keyword: materialCode })
+    const match = (data.records || []).find(a => a.materialCode === materialCode)
     if (match && match.packCapacity > 0) {
       inboundForm.details[idx].packType = match.packType || ''
       inboundForm.details[idx].packCapacity = match.packCapacity
@@ -1128,18 +1143,54 @@ function removeDetail(idx) {
   if (inboundForm.details.length > 1) inboundForm.details.splice(idx, 1)
 }
 
-/**
- * 供应商切换时刷新物料目录，保留已添加的物料明细。
- */
-function onSupplierChange() {
+/** 获取供应商名称 */
+function getSupplierName(code) {
+  const s = supplierOptions.value.find(s => s.supplierCode === code)
+  return s ? `${s.supplierName} (${s.supplierCode})` : code
+}
+
+/** 确认添加多选的供应商标签 → 合并加载物料目录 */
+function confirmAddSuppliers() {
+  if (pendingSuppliers.value.length === 0) return
+  let added = 0
+  for (const code of pendingSuppliers.value) {
+    if (!inboundForm.selectedSuppliers.includes(code)) {
+      inboundForm.selectedSuppliers.push(code)
+      added++
+    }
+  }
+  pendingSuppliers.value = []
+  if (added > 0) {
+    materialOptions.value = {}
+    loadMultiSupplierCatalog()
+    ElMessage.success(`已添加 ${added} 家供应商`)
+  }
+}
+
+/** 添加单个供应商（保留兼容） */
+function addSupplier(code) {
+  if (!inboundForm.selectedSuppliers.includes(code)) {
+    inboundForm.selectedSuppliers.push(code)
+    pendingSuppliers.value = []
+    materialOptions.value = {}
+    loadMultiSupplierCatalog()
+  }
+}
+
+/** 移除供应商标签 → 刷新目录 */
+function removeSupplier(code) {
+  const idx = inboundForm.selectedSuppliers.indexOf(code)
+  if (idx >= 0) inboundForm.selectedSuppliers.splice(idx, 1)
   materialOptions.value = {}
-  loadSupplierCatalog(inboundForm.supplierCode)
+  loadMultiSupplierCatalog()
 }
 
 function openInboundDialog() {
   isAiDraft.value = false
-  inboundForm.supplierCode = ''
+  inboundForm.selectedSuppliers = []
+  pendingSuppliers.value = []
   inboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
+  catalogMaterials.value = []
   materialOptions.value = {}
   dialogVisible.value = true
 }
@@ -1151,24 +1202,25 @@ function applyAiInboundDraft() {
 
   isAiDraft.value = true
   activeTab.value = 'inbound'
-  inboundForm.supplierCode = ''
+  inboundForm.selectedSuppliers = []
   inboundForm.details = [{
     materialCode,
     packType: '',
     packCapacity: 0,
     boxCount: 1
   }]
+  catalogMaterials.value = []
   materialOptions.value = {}
   dialogVisible.value = true
-  ElMessage.info('已根据 AI 建议预填入库物料，请选择供应商后自动获取单箱容量')
+  ElMessage.info('已根据 AI 建议预填入库物料，请添加供应商后自动获取单箱容量')
 
   router.replace({ path: route.path, query: {} })
 }
 
 async function handleCreate() {
   // 手动校验必填项
-  if (!inboundForm.supplierCode) {
-    ElMessage.warning('请选择供应商')
+  if (inboundForm.selectedSuppliers.length === 0) {
+    ElMessage.warning('请至少添加一个供应商')
     return
   }
   const invalidDetail = inboundForm.details.find(item =>
@@ -1182,7 +1234,7 @@ async function handleCreate() {
   }
   try {
     await createInbound({
-      supplierCode: inboundForm.supplierCode,
+      supplierCode: inboundForm.selectedSuppliers[0],
       details: inboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount }))
     })
     ElMessage.success('入库单创建成功')
@@ -1812,8 +1864,9 @@ async function loadHistories() {
 
 // ==================== 物料目录加载 ====================
 
-/** 加载供应商物料目录（含器具信息） */
+/** 加载供应商物料目录（含器具信息） — 支持单供应商回退 */
 async function loadSupplierCatalog(supplierCode) {
+  if (!supplierCode) { catalogMaterials.value = []; return }
   try {
     const [matRes, appRes] = await Promise.all([
       getMaterials({ page: 1, size: 200, supplierCode }),
@@ -1826,14 +1879,39 @@ async function loadSupplierCatalog(supplierCode) {
       return {
         materialCode: m.materialCode,
         materialName: m.materialName,
+        _supplierCode: supplierCode,
         _appliance: !!app,
         _packType: app?.packType || '',
         _packCapacity: app?.packCapacity || 0
       }
     })
-  } catch {
-    catalogMaterials.value = []
-  }
+  } catch { catalogMaterials.value = [] }
+}
+
+/** 聚合加载所有选中供应商的物料目录 */
+async function loadMultiSupplierCatalog() {
+  const suppliers = inboundForm.selectedSuppliers
+  if (suppliers.length === 0) { catalogMaterials.value = []; return }
+  try {
+    const [matRes, appRes] = await Promise.all([
+      getMaterials({ page: 1, size: 500 }),
+      getAppliances({ page: 1, size: 500 })
+    ])
+    const supplierSet = new Set(suppliers)
+    const materials = (matRes.records || []).filter(m => supplierSet.has(m.supplierCode))
+    const appliances = appRes.records || []
+    catalogMaterials.value = materials.map(m => {
+      const app = appliances.find(a => a.materialCode === m.materialCode && a.supplierCode === m.supplierCode)
+      return {
+        materialCode: m.materialCode,
+        materialName: m.materialName,
+        _supplierCode: m.supplierCode,
+        _appliance: !!app,
+        _packType: app?.packType || '',
+        _packCapacity: app?.packCapacity || 0
+      }
+    })
+  } catch { catalogMaterials.value = [] }
 }
 
 async function loadEditSupplierCatalog(supplierCode) {
@@ -2054,8 +2132,8 @@ function calcRowTotal(item) {
 // ==================== 对话框打开钩子 ====================
 
 function onCreateDialogOpened() {
-  if (inboundForm.supplierCode) {
-    loadSupplierCatalog(inboundForm.supplierCode)
+  if (inboundForm.selectedSuppliers.length > 0) {
+    loadMultiSupplierCatalog()
   }
 }
 
@@ -2422,6 +2500,27 @@ function onOutEditDialogOpened() {
   }
 }
 
+/* ==================== 供应商多选标签 ==================== */
+.supplier-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.supplier-pick-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.supplier-pick-group :deep(.el-select__wrapper) {
+  min-width: 180px;
+}
+.supplier-code-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* ==================== 物料目录面板 ==================== */
 .catalog-panel {
   border: 1px solid var(--border-light);
@@ -2532,6 +2631,7 @@ function onOutEditDialogOpened() {
   border-radius: 4px;
   background: #fafafa;
 }
+
 .barcode-tag-area:focus-within {
   border-color: var(--wms-primary);
   background: #fff;
@@ -2555,5 +2655,12 @@ function onOutEditDialogOpened() {
 .barcode-input-inline :deep(.el-input__wrapper:hover),
 .barcode-input-inline :deep(.el-input__wrapper.is-focus) {
   box-shadow: none;
+}
+</style>
+
+<style>
+.el-drawer__body {
+  padding: 20px 24px;
+  overflow-y: auto;
 }
 </style>

@@ -355,12 +355,12 @@ public class DataInitializer implements CommandLineRunner {
         insertInventory("M_PART_011", 240, 3, 15);  // 30×8（原250→240整箱）
         insertInventory("M_PART_014", 400, 3, 10);  // 50×8 ✅
 
-        // 超低储（红色预警）
-        insertInventory("M_PART_004", 50, 7, 30);   // 10×5 ✅
-        insertInventory("M_PART_005", 40, 3, 15);   // 40×1（原15→40整箱）
-        insertInventory("M_PART_009", 60, 3, 15);   // 60×1（原8→60整箱）
-        insertInventory("M_PART_012", 25, 3, 15);   // 25×1（原5→25整箱）
-        insertInventory("M_PART_015", 40, 3, 15);   // 40×1（原20→40整箱）
+        // 超低储（红色预警）—— 日均10件，库存天数 < minStockDays 即触发
+        insertInventory("M_PART_004", 50, 7, 30);   // 10×5，日均5件 < min=7 ✅
+        insertInventory("M_PART_005", 40, 5, 15);   // 40×1，日均4件 < min=5（阈值跟随40整箱上调）
+        insertInventory("M_PART_009", 60, 7, 15);   // 60×1，日均6件 < min=7（阈值跟随60整箱上调）
+        insertInventory("M_PART_012", 25, 3, 15);   // 25×1，日均2.5件 < min=3 ✅
+        insertInventory("M_PART_015", 40, 5, 15);   // 40×1，日均4件 < min=5（阈值跟随40整箱上调）
 
         // 正常水位
         insertInventory("M_PART_006", 84, 5, 20);   // 12×7（原80→84整箱）
@@ -486,9 +486,9 @@ public class DataInitializer implements CommandLineRunner {
                 "建议立即暂停该物料采购计划，优先消耗现有库存。可考虑与供应商协商退货或调拨至其他工厂。建议将高储天数调整至10天以内，建立库存消化跟踪机制。",
                 now.minusHours(2));
 
-        // 2. 严重超低储 → AI 建议紧急补货（库存已修正为整箱：40×1=40）
+        // 2. 严重超低储 → AI 建议紧急补货（库存 40件=1箱，minStockDays=5，阈值50件）
         insertAiReport("M_PART_005", 40, "LOW_STOCK", "CRITICAL", "SUCCESS", 200, 0.95f,
-                "刹车片组件当前库存仅40件（1个整箱），已严重跌破低储安全线（3天×10件/天=30件）。按未来15天排产预测（总需求160件），库存将在4天内完全耗尽，导致总装线停产风险。属于最高优先级断供预警。",
+                "刹车片组件当前库存仅40件（1个整箱），已严重跌破低储安全线（5天×10件/天=50件）。按未来15天排产预测（总需求160件），库存将在4天内完全耗尽，导致总装线停产风险。属于最高优先级断供预警。",
                 "建议立即向供应商SUP_BOSCH_01发起紧急补货订单。推荐补货量200件（标准铁箱5箱），预计可恢复至15天安全水位。建议同步启用安全库存缓冲机制。",
                 now.minusHours(3));
 
@@ -498,9 +498,9 @@ public class DataInitializer implements CommandLineRunner {
                 "建议紧急补货150件至基础安全线。同时与计划部门确认未来两周是否有该车型排产计划，若无则标记为潜在呆滞观察对象。",
                 now.minusHours(1));
 
-        // 4. Mock 兜底报告（大模型超时降级产物，库存已修正为整箱：60×1=60）
+        // 4. Mock 兜底报告（大模型超时降级产物，库存 60件=1箱，minStockDays=7，阈值70件）
         insertAiReport("M_PART_009", 60, "LOW_STOCK", "HIGH", "MOCKED", 120, 0.6f,
-                "[降级引擎Mock提示]: 由于外部AI推演大模型服务连线超时，系统自动执行基本精益规则扫描。当前库存已跌破低储天数标准线（3天×10件/天=30件，现仅60件=1个整箱），预测未来需求存在供应缺口，产生基础断供风险。",
+                "[降级引擎Mock提示]: 由于外部AI推演大模型服务连线超时，系统自动执行基本精益规则扫描。当前库存已跌破低储天数标准线（7天×10件/天=70件，现仅60件=1个整箱），预测未来需求存在供应缺口，产生基础断供风险。",
                 "建议向供应商发起紧急补货。推荐补货量：120件（2个整箱），可将库存恢复至低储安全线以上。",
                 now.minusMinutes(30));
 
