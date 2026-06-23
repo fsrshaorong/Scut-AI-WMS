@@ -59,7 +59,6 @@ watch(() => props.option, () => {
   border-radius: 4px;
   padding: 16px;
   box-shadow: var(--shadow-light);
-  margin-bottom: 16px;
 }
 .chart-card-title {
   font-size: 15px;

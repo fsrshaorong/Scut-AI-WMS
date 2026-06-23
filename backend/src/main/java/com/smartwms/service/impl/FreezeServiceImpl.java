@@ -110,6 +110,18 @@ public class FreezeServiceImpl implements FreezeService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void update(Long id, String freezeType, String reason) {
+        InventoryFreeze freeze = freezeMapper.selectById(id);
+        if (freeze == null) throw new BusinessException(ErrorCode.NOT_FOUND, "封存记录不存在");
+        if (!"FROZEN".equals(freeze.getStatus()))
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅封存中的记录可编辑");
+        freeze.setFreezeType(freezeType);
+        freeze.setReason(reason);
+        freezeMapper.updateById(freeze);
+    }
+
+    @Override
     public Page<InventoryFreeze> list(int page, int size, String materialCode, String status) {
         LambdaQueryWrapper<InventoryFreeze> wrapper = new LambdaQueryWrapper<>();
         if (materialCode != null && !materialCode.isBlank()) {

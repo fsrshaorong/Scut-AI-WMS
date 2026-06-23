@@ -28,164 +28,39 @@
     </div>
 
 
-    <!-- 图表区域 -->
-    <div class="chart-row">
-      <div class="chart-half">
-        <ChartCard title="库存水位分布" :height="260" :option="levelPieOption" />
-      </div>
-      <div class="chart-half">
-        <ChartCard title="库存量 Top 10" :height="260" :option="stockBarOption" />
-      </div>
+    <!-- 图表区 (两列) -->
+    <div class="dashboard-mid-row">
+      <ChartCard title="库存水位分布" :height="260" :option="levelPieOption" />
+      <ChartCard title="库存量 Top 10" :height="260" :option="stockBarOption" />
     </div>
 
-    <!-- 扫码操作面板 -->
-    <div class="content-block scan-block">
+    <!-- 库存 -->
+    <div class="content-block" style="margin-bottom: 16px">
       <div class="block-header">
-        <span class="block-title">扫码操作</span>
+        <span class="block-title">库存</span>
+        <el-input v-model="searchKeyword" placeholder="搜索物料" clearable size="small"
+          style="width: 220px" />
       </div>
-
-      <!-- 模式选择 -->
-      <div class="scan-mode-row">
-        <div class="scan-mode-item" :class="{ active: scanMode === 'inbound' }"
-          @click="switchScanMode('inbound')">
-          <el-icon :size="22"><Box /></el-icon>
-          <span>入库</span>
-        </div>
-        <div class="scan-mode-item" :class="{ active: scanMode === 'outbound' }"
-          @click="switchScanMode('outbound')">
-          <el-icon :size="22"><Sell /></el-icon>
-          <span>出库</span>
-        </div>
-        <div class="scan-mode-item" :class="{ active: scanMode === 'seal' }"
-          @click="switchScanMode('seal')">
-          <el-icon :size="22"><Lock /></el-icon>
-          <span>封存</span>
-        </div>
-        <div class="scan-mode-item" :class="{ active: scanMode === 'unseal' }"
-          @click="switchScanMode('unseal')">
-          <el-icon :size="22"><Unlock /></el-icon>
-          <span>解封</span>
-        </div>
-      </div>
-
-      <!-- 操作按钮 -->
-      <div class="scan-action-row">
-        <div class="scan-action-btn" @click="openScanCamera">
-          <el-icon :size="28"><Camera /></el-icon>
-          <span>摄像头扫码</span>
-        </div>
-        <div class="scan-action-btn" @click="openScanUpload">
-          <el-icon :size="28"><Upload /></el-icon>
-          <span>上传图片</span>
-        </div>
-      </div>
-
-      <!-- 模式说明 -->
-      <div class="scan-mode-hint">
-        <template v-if="scanMode === 'inbound'">扫描入库条码（WMS|... 格式），自动核销入库并更新库存</template>
-        <template v-else-if="scanMode === 'outbound'">扫描已拣货的入库条码（WMS|...），核销出库（一码到底）</template>
-        <template v-else-if="scanMode === 'seal'">扫描在库条码将其封存，封存后该条码不可出库</template>
-        <template v-else>扫描已封存条码将其解封，恢复为在库可流转状态</template>
-      </div>
-
-      <!-- 扫码结果 -->
-      <div v-if="scanResult" class="scan-result" :class="'scan-' + scanMode">
-        <div class="scan-result-header">
-          <el-icon :size="18"><CircleCheckFilled /></el-icon>
-          <span>{{ scanModeLabel }}成功</span>
-        </div>
-        <div class="qr-row">
-          <span class="qr-label">物料号</span>
-          <span class="qr-value">{{ scanResult.materialCode }}</span>
-        </div>
-        <div class="qr-row" v-if="scanResult.orderNo">
-          <span class="qr-label">{{ scanMode === 'outbound' ? '出库单号' : '入库单号' }}</span>
-          <span class="qr-value">{{ scanResult.orderNo }}</span>
-        </div>
-        <div class="qr-row" v-if="scanResult.qty">
-          <span class="qr-label">数量</span>
-          <span class="qr-value">{{ scanResult.qty }} 件</span>
-        </div>
-        <div class="qr-row">
-          <span class="qr-label">条码</span>
-          <span class="qr-value" style="font-size:11px;word-break:break-all">{{ scanResult.barcode }}</span>
-        </div>
-      </div>
-      <div v-if="scanError" class="scan-error">
-        <el-icon :size="16"><WarningFilled /></el-icon>
-        <span>{{ scanError }}</span>
-      </div>
-      <div style="margin-top: 10px">
-        <el-button type="primary" link size="small" @click="$router.push('/inventory-trace')">
-          <el-icon :size="14"><Search /></el-icon>
-          库存追溯查询
-        </el-button>
-      </div>
-    </div>
-
-    <BarcodeScanner ref="scannerRef" @scanned="onBarcodeScanned" />
-
-    <!-- 双栏工作区 -->
-    <div class="work-area">
-      <!-- 左栏：库存水位分布 -->
-      <div class="content-block work-left">
-        <div class="block-header">
-          <span class="block-title">库存水位分布</span>
-          <el-input v-model="searchKeyword" placeholder="搜索物料" clearable size="small"
-            style="width: 220px" />
-        </div>
-        <el-table :data="filteredData" stripe size="small">
-          <el-table-column prop="materialCode" label="物料号" width="130" />
-          <el-table-column prop="materialName" label="物料名称" min-width="140" />
-          <el-table-column prop="stockQty" label="当前库存" width="90" align="right" />
-          <el-table-column prop="minStockDays" label="低储(天)" width="80" align="center" />
-          <el-table-column prop="maxStockDays" label="高储(天)" width="80" align="center" />
-          <el-table-column label="评级" width="100" align="center">
-            <template #default="{ row }">
-              <span class="badge" :class="'badge-' + badgeClass(row.ruleEvaluation)">
-                {{ ruleLabel(row.ruleEvaluation) }}
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <!-- 右栏：AI 速查 + 最近动态 -->
-      <div class="content-block work-right" style="width: 360px; flex-shrink: 0">
-        <div class="block-header"><span class="block-title">AI 智能速查</span></div>
-        <div style="display: flex; gap: 8px; margin-bottom: 16px">
-          <el-input v-model="quickCode" placeholder="输入物料号" size="small" clearable />
-          <el-button type="primary" size="small" :loading="quickLoading" @click="handleQuickSearch">查询</el-button>
-        </div>
-        <div v-if="quickResult" class="quick-result">
-          <div class="qr-row"><span class="qr-label">物料</span><span class="qr-value">{{ quickResult.materialCode }}</span></div>
-          <div class="qr-row"><span class="qr-label">快照库存</span><span class="qr-value">{{ quickResult.currentStock }} 件</span></div>
-          <div class="qr-row"><span class="qr-label">风险类型</span><span class="badge" :class="'badge-' + badgeClass(quickResult.riskType)">{{ riskLabel(quickResult.riskType) }}</span></div>
-          <div class="qr-row"><span class="qr-label">风险等级</span><span class="qr-value">{{ quickResult.riskLevel }}</span></div>
-          <div class="qr-row"><span class="qr-label">建议补货</span><span class="qr-value" style="font-weight: 600; color: var(--wms-primary)">{{ quickResult.suggestedQty }} 件</span></div>
-          <div class="qr-row"><span class="qr-label">置信度</span><span class="qr-value">{{ (quickResult.confidence * 100).toFixed(0) }}%</span></div>
-          <el-divider style="margin: 12px 0" />
-          <p class="qr-advice">{{ quickResult.replenishmentSuggestion }}</p>
-        </div>
-        <div v-else-if="quickSearched" class="empty-hint">
-          <p>暂无该物料的 AI 分析报告</p>
-          <el-button text type="primary" size="small" @click="handleTriggerPredict">点击发起 AI 预测</el-button>
-        </div>
-        <div v-else class="empty-hint"><p>输入物料号查看 AI 智能分析结果</p></div>
-
-        <!-- 最近动态 -->
-        <el-divider style="margin: 20px 0 12px" />
-        <div class="block-header" style="margin-bottom: 8px"><span class="block-title">最近动态</span></div>
-        <div v-if="recentActivity.length" class="activity-list">
-          <div v-for="(a, i) in recentActivity" :key="i" class="activity-item">
-            <span class="act-badge" :class="a.type === 'inbound' ? 'badge-success' : 'badge-warn'">
-              {{ a.type === 'inbound' ? '入库' : '出库' }}
+      <el-table :data="pagedStockData" stripe size="small">
+        <el-table-column prop="materialCode" label="物料号" width="130" />
+        <el-table-column prop="materialName" label="物料名称" min-width="140" />
+        <el-table-column prop="stockQty" label="当前库存" width="90" align="right" />
+        <el-table-column prop="minStockDays" label="低储(天)" width="80" align="center" />
+        <el-table-column prop="maxStockDays" label="高储(天)" width="80" align="center" />
+        <el-table-column label="评级" width="100" align="center">
+          <template #default="{ row }">
+            <span class="badge" :class="'badge-' + badgeClass(row.ruleEvaluation)">
+              {{ ruleLabel(row.ruleEvaluation) }}
             </span>
-            <span class="act-text">{{ a.text }}</span>
-            <span class="act-time">{{ a.time }}</span>
-          </div>
-        </div>
-        <div v-else class="empty-hint" style="padding: 20px 0"><p>暂无最近动态</p></div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-if="filteredData.length > stockPageSize"
+          :current-page="stockPage" :page-size="stockPageSize" :total="filteredData.length"
+          layout="total, prev, pager, next" size="small"
+          @current-change="(p) => stockPage = p" />
       </div>
     </div>
   </div>
@@ -195,15 +70,12 @@
 /**
  * 智能看板 — 统计概览 + 图表 + 库存水位 + AI 速查 + 扫码入库 + 动态流 + 实时告警。
  */
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { getStockReport } from '@/api/stock'
-import { getLatestReport, triggerPredict } from '@/api/ai'
-import { getInboundOrders, scanInbound } from '@/api/inbound'
-import { getOutboundOrders, unifiedScan } from '@/api/outbound'
-import { sealBarcodes, unsealBarcode } from '@/api/freeze'
+import { getInboundOrders } from '@/api/inbound'
+import { getOutboundOrders } from '@/api/outbound'
 import { ElMessage, ElNotification } from 'element-plus'
-import { WarningFilled, Camera, Upload, Search, Box, Sell, Lock, Unlock, CircleCheckFilled } from '@element-plus/icons-vue'
-import BarcodeScanner from '@/components/BarcodeScanner.vue'
+import { WarningFilled, Search } from '@element-plus/icons-vue'
 import ChartCard from '@/components/ChartCard.vue'
 
 const stats = reactive({ totalSku: 0, deadStockCount: 0, highRiskCount: 0 })
@@ -216,40 +88,14 @@ const filteredData = computed(() => {
   return stockData.value.filter(r => r.materialCode?.toLowerCase().includes(kw) || r.materialName?.toLowerCase().includes(kw))
 })
 
-// AI 速查
-const quickCode = ref('')
-const quickLoading = ref(false)
-const quickResult = ref(null)
-const quickSearched = ref(false)
-
-// 扫码操作
-const scanMode = ref('inbound')
-const scanResult = ref(null)
-const scanError = ref('')
-const scannerRef = ref(null)
-
-const scanModeLabel = computed(() => {
-  const map = { inbound: '入库', outbound: '出库', seal: '封存', unseal: '解封' }
-  return map[scanMode.value] || ''
+// 库存表分页
+const stockPage = ref(1)
+const stockPageSize = ref(10)
+const pagedStockData = computed(() => {
+  const start = (stockPage.value - 1) * stockPageSize.value
+  return filteredData.value.slice(start, start + stockPageSize.value)
 })
-
-function switchScanMode(mode) {
-  scanMode.value = mode
-  scanResult.value = null
-  scanError.value = ''
-}
-
-function openScanCamera() {
-  scanResult.value = null
-  scanError.value = ''
-  scannerRef.value?.openCamera()
-}
-
-function openScanUpload() {
-  scanResult.value = null
-  scanError.value = ''
-  scannerRef.value?.openUpload()
-}
+watch(searchKeyword, () => { stockPage.value = 1 })
 
 // 最近动态
 const recentActivity = ref([])
@@ -270,9 +116,9 @@ const levelPieOption = computed(() => {
       label: { formatter: '{b}\n{d}%', fontSize: 11 },
       data: [
         { value: counts.NORMAL, name: '正常', itemStyle: { color: '#67c23a' } },
-        { value: counts.LOW_STOCK, name: '超低储', itemStyle: { color: '#f56c6c' } },
-        { value: counts.HIGH, name: '超高储', itemStyle: { color: '#e6a23c' } },
-        { value: counts.DEAD_STOCK, name: '滞销', itemStyle: { color: '#f0ad4e' } }
+        { value: counts.LOW_STOCK, name: '低储', itemStyle: { color: '#f56c6c' } },
+        { value: counts.HIGH, name: '高储', itemStyle: { color: '#e6a23c' } },
+        { value: counts.DEAD_STOCK, name: '滞销', itemStyle: { color: '#606266' } }
       ]
     }]
   }
@@ -294,7 +140,7 @@ const stockBarOption = computed(() => {
         borderRadius: [4, 4, 0, 0],
         color: params => {
           const v = top10[params.dataIndex]?.ruleEvaluation
-          return v === 'LOW_STOCK' ? '#f56c6c' : v === 'HIGH' ? '#e6a23c' : v === 'DEAD_STOCK' ? '#f0ad4e' : '#67c23a'
+          return v === 'LOW_STOCK' ? '#f56c6c' : v === 'HIGH' ? '#e6a23c' : v === 'DEAD_STOCK' ? '#606266' : '#67c23a'
         }
       }
     }]
@@ -367,7 +213,7 @@ function startAlertPolling() {
       if (newLows.length) {
         ElNotification({
           title: '⚠ 库存预警',
-          message: `以下物料触发超低储预警：${newLows.join(', ')}`,
+          message: `以下物料触发低储预警：${newLows.join(', ')}`,
           type: 'warning',
           duration: 10000
         })
@@ -377,217 +223,33 @@ function startAlertPolling() {
   }, 60000)
 }
 
-/** 从 WMS|... 条码中解析物料编码 */
-function parseMaterialFromBarcode(code) {
-  if (!code || !code.startsWith('WMS|')) return '—'
-  const parts = code.split('|')
-  return parts[1] || '—'
-}
-
-/** 从 WMS|... 条码中解析单箱容量 */
-function parseQtyFromBarcode(code) {
-  if (!code || !code.startsWith('WMS|')) return 0
-  const parts = code.split('|')
-  return parseInt(parts[4]) || 0
-}
-
-// ==================== 扫码操作（入库/出库/封存/解封，严格隔离） ====================
-async function onBarcodeScanned(code) {
-  scanResult.value = null
-  scanError.value = ''
-  try {
-    // —— 格式校验：根据当前模式拒绝不匹配的条码格式 ——
-    const isInboundBarcode = code.startsWith('WMS|')
-    const isOutboundBarcode = code.startsWith('OUT|')
-
-    switch (scanMode.value) {
-      case 'inbound': {
-        if (isOutboundBarcode) {
-          scanError.value = '这是出库标签（OUT|...），请切换到「出库」模式扫码'
-          return
-        }
-        const data = await scanInbound({ barcode: code })
-        scanResult.value = { ...data, barcode: code }
-        ElMessage.success(`入库成功：${data.materialCode}，${data.qty} 件`)
-        loadData()
-        break
-      }
-      case 'outbound': {
-        if (!isInboundBarcode) {
-          scanError.value = '出库请扫描入库条码（WMS|...），OUT标签已废弃。请切换到对应模式或使用正确的条码'
-          return
-        }
-        const data = await unifiedScan({ barcode: code })
-        scanResult.value = { ...data, barcode: code }
-        ElMessage.success(`出库成功：${data.materialCode}，${data.qty} 件`)
-        loadData()
-        break
-      }
-      case 'seal': {
-        if (isOutboundBarcode) {
-          scanError.value = '出库标签不可封存，请扫描在库条码（WMS|...）'
-          return
-        }
-        await sealBarcodes({ barcodes: [code], freezeType: '扫码', reason: '扫码封存' })
-        scanResult.value = { materialCode: parseMaterialFromBarcode(code), qty: parseQtyFromBarcode(code), barcode: code }
-        ElMessage.success(`封存成功：${scanResult.value.materialCode}`)
-        break
-      }
-      case 'unseal': {
-        if (isOutboundBarcode) {
-          scanError.value = '出库标签不可解封，请扫描封存中的入库条码'
-          return
-        }
-        await unsealBarcode(code)
-        scanResult.value = { materialCode: parseMaterialFromBarcode(code), qty: parseQtyFromBarcode(code), barcode: code }
-        ElMessage.success(`解封成功：${scanResult.value.materialCode}`)
-        break
-      }
-    }
-  } catch (err) {
-    scanError.value = err.message || '扫码操作失败'
-  }
-}
-
-async function handleQuickSearch() {
-  if (!quickCode.value.trim()) return
-  quickLoading.value = true
-  quickSearched.value = true
-  try { quickResult.value = await getLatestReport(quickCode.value.trim()) } catch { quickResult.value = null }
-  finally { quickLoading.value = false }
-}
-
-async function handleTriggerPredict() {
-  try { await triggerPredict(quickCode.value.trim()); ElMessage.success('AI 预测任务已启动') }
-  catch { ElMessage.error('启动失败') }
-}
-
-
 // 辅助
 function badgeClass(v) {
-  const m = { 'LOW_STOCK': 'danger', 'DEAD_STOCK': 'warn', 'HIGH': 'warn', 'BOTH': 'danger', 'CRITICAL': 'danger', 'NORMAL': 'success' }
+  const m = { 'LOW_STOCK': 'danger', 'DEAD_STOCK': 'dead', 'HIGH': 'warning', 'BOTH': 'danger', 'CRITICAL': 'danger', 'NORMAL': 'success' }
   return m[v] || 'default'
 }
 function ruleLabel(v) {
-  const m = { 'LOW_STOCK': '超低储', 'DEAD_STOCK': '滞销', 'HIGH': '超高储', 'NORMAL': '正常' }
-  return m[v] || v
-}
-function riskLabel(v) {
-  const m = { 'LOW_STOCK': '断供预警', 'DEAD_STOCK': '滞销风险', 'BOTH': '双重风险', 'NORMAL': '正常' }
+  const m = { 'LOW_STOCK': '低储', 'HIGH': '高储', 'DEAD_STOCK': '滞销', 'NORMAL': '正常' }
   return m[v] || v
 }
 </script>
 
 <style scoped>
-.stat-row { display: flex; align-items: center; gap: 32px; background: var(--content-bg); padding: 20px 24px; border-radius: 4px; box-shadow: var(--shadow-light); margin-bottom: 16px; }
-.stat-item { display: flex; flex-direction: column; }
+.stat-row { display: flex; align-items: center; gap: 28px; background: var(--content-bg); padding: 18px 24px; border-radius: 4px; box-shadow: var(--shadow-light); margin-bottom: 16px; }
+.stat-item { display: flex; flex-direction: column; min-width: 100px; }
 .stat-spacer { flex: 1; }
-.stat-tip { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+.stat-tip { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .stat-number { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
 .stat-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-.stat-warn .stat-number { color: var(--wms-warning); }
-.stat-danger .stat-number { color: var(--wms-danger); }
+.stat-warn .stat-number, .stat-danger .stat-number { color: var(--wms-danger); }
 
-/* 图表 */
-.chart-row { display: flex; gap: 16px; margin-bottom: 16px; }
-.chart-half { flex: 1; min-width: 0; }
-
-/* 扫码操作面板 */
-.scan-block { margin-bottom: 16px; }
-
-/* 模式选择行 */
-.scan-mode-row {
-  display: flex;
-  gap: 12px;
+/* ==================== 中栏：图表 + 扫码 ==================== */
+.dashboard-mid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
   margin-bottom: 16px;
 }
-.scan-mode-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: 2px solid var(--border-light);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  user-select: none;
-}
-.scan-mode-item:hover {
-  border-color: var(--wms-primary);
-  color: var(--wms-primary);
-  background: #ecf5ff;
-}
-.scan-mode-item.active {
-  border-color: var(--wms-primary);
-  background: #ecf5ff;
-  color: var(--wms-primary);
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15);
-}
-
-/* 扫描按钮行 */
-.scan-action-row {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-.scan-action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 20px 32px;
-  border: 2px dashed var(--border-base);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: var(--text-secondary);
-  flex: 1;
-}
-.scan-action-btn:hover {
-  border-color: var(--wms-primary);
-  color: var(--wms-primary);
-  background: #f5f9ff;
-  border-style: solid;
-}
-
-/* 模式说明 */
-.scan-mode-hint {
-  font-size: 12px;
-  color: var(--text-placeholder);
-  text-align: center;
-  margin-bottom: 12px;
-  line-height: 1.5;
-}
-
-/* 扫码结果 */
-.scan-result { margin-top: 12px; padding: 12px; border-radius: 4px; }
-.scan-result-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
-}
-.scan-inbound { background: #f0f9eb; border: 1px solid #e1f3d8; }
-.scan-inbound .scan-result-header { color: #67c23a; }
-.scan-outbound { background: #f4f4f5; border: 1px solid #e4e7ed; }
-.scan-outbound .scan-result-header { color: #909399; }
-.scan-seal { background: #fdf6ec; border: 1px solid #faecd8; }
-.scan-seal .scan-result-header { color: #e6a23c; }
-.scan-unseal { background: #ecf5ff; border: 1px solid #d9ecff; }
-.scan-unseal .scan-result-header { color: #409eff; }
-.scan-error { margin-top: 12px; padding: 10px 14px; background: #fef0f0; border-radius: 4px; color: #f56c6c; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-
-/* 工作区 */
-.work-area { display: flex; gap: 16px; align-items: flex-start; }
-.work-left { flex: 1; min-width: 0; }
-.work-right { width: 360px; flex-shrink: 0; }
 
 /* 动态 */
 .activity-list { font-size: 12px; }
@@ -607,9 +269,29 @@ function riskLabel(v) {
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 500; }
 .badge-success { background: #f0f9eb; color: #67c23a; }
-.badge-warn    { background: #fdf6ec; color: #e6a23c; }
+.badge-warning { background: #fdf6ec; color: #e6a23c; }
 .badge-danger  { background: #fef0f0; color: #f56c6c; }
+.badge-dead    { background: #f0f0f0; color: #606266; }
 .badge-default { background: #f4f4f5; color: #909399; }
+
+/* 响应式：中屏图表+扫码叠放 */
+@media (max-width: 1100px) {
+  .dashboard-mid-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dash-card-scan {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 768px) {
+  .dashboard-mid-row {
+    grid-template-columns: 1fr;
+  }
+  .stat-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
 
 /* 响应式布局 */
 @media (max-width: 900px) {

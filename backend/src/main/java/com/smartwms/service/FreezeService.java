@@ -18,6 +18,9 @@ public interface FreezeService {
     /** 解封条码 */
     void unseal(String barcode, String operator);
 
+    /** 更新封存记录（类型、原因） */
+    void update(Long id, String freezeType, String reason);
+
     /** 分页查询封存记录 */
     Page<InventoryFreeze> list(int page, int size, String materialCode, String status);
 }

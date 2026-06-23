@@ -67,6 +67,12 @@ const routes = [
         meta: { title: '入库历史' }
       },
       {
+        path: 'scan',
+        name: 'Scan',
+        component: () => import('@/views/Scan.vue'),
+        meta: { title: '扫码操作' }
+      },
+      {
         path: 'freeze',
         name: 'FreezeManagement',
         component: () => import('@/views/FreezeManagement.vue'),

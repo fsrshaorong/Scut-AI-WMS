@@ -127,6 +127,7 @@
         </el-form>
         <template #footer>
           <el-button @click="editVisible = false">关闭</el-button>
+          <el-button v-if="editForm.status === 'FROZEN'" type="primary" @click="handleEditSave">保存</el-button>
           <el-button v-if="editForm.status === 'FROZEN'" type="success" @click="handleEditUnseal">解封</el-button>
         </template>
       </el-dialog>
@@ -211,6 +212,18 @@ function openEditDialog(row) {
   editForm.freezeTime = row.freezeTime
   editForm.status = row.status
   editVisible.value = true
+}
+
+async function handleEditSave() {
+  if (!editForm.reason.trim()) { ElMessage.warning('请填写封存原因'); return }
+  try {
+    await request.put(`/freeze/${editForm.id}`, null, {
+      params: { freezeType: editForm.freezeType, reason: editForm.reason.trim() }
+    })
+    ElMessage.success('保存成功')
+    editVisible.value = false
+    loadList()
+  } catch (err) { ElMessage.error(err.message || '保存失败') }
 }
 
 async function handleEditUnseal() {

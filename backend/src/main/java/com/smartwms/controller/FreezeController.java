@@ -40,6 +40,15 @@ public class FreezeController {
         return Result.success("解封成功", null);
     }
 
+    /** 更新封存记录 */
+    @PutMapping("/{id}")
+    public Result<Void> update(@PathVariable Long id,
+                                @RequestParam String freezeType,
+                                @RequestParam String reason) {
+        freezeService.update(id, freezeType, reason);
+        return Result.success("更新成功", null);
+    }
+
     /** 分页查询封存记录 */
     @GetMapping("/list")
     public Result<Page<InventoryFreeze>> list(
