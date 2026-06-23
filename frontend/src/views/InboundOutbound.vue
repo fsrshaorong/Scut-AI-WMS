@@ -152,7 +152,7 @@
                 <span class="catalog-hint">已选 {{ catalogChecked.length }} / {{ catalogMaterials.length }} 种</span>
               </div>
               <div class="catalog-scroll">
-                <el-table :data="filteredCatalog" size="small" max-height="200"
+                <el-table :data="filteredCatalog" size="small" max-height="300"
                   @selection-change="onCatalogSelect" ref="catalogTableRef" row-key="materialCode">
                   <el-table-column type="selection" width="36" :selectable="catalogSelectable" />
                   <el-table-column prop="materialCode" label="物料号" width="130" />
@@ -273,9 +273,9 @@
           <span>{{ confirmTarget?.supplierCode }}</span>
         </div>
         <el-table :data="confirmDetails" stripe size="small" style="margin-top: 12px">
-          <el-table-column prop="materialCode" label="物料号" width="140" />
-          <el-table-column prop="planQty" label="计划入库数" width="110" align="right" />
-          <el-table-column label="实际到货数" min-width="160">
+          <el-table-column prop="materialCode" label="物料号" min-width="150" />
+          <el-table-column prop="planQty" label="计划入库数" width="120" align="center" />
+          <el-table-column label="实际到货数" width="160" align="center">
             <template #default="{ row, $index }">
               <el-input-number v-model="row._actualQty" :min="0" :max="999999"
                 size="small" controls-position="right" style="width: 140px" />
@@ -299,7 +299,7 @@
     <!-- 入库单详情对话框 (Teleport to body) -->
     <Teleport to="body">
       <el-dialog v-model="detailVisible" title="入库单详情"
-        width="min(640px, calc(100vw - 32px))" destroy-on-close>
+        width="min(680px, calc(100vw - 32px))" destroy-on-close>
         <div v-if="detailData" class="detail-info-grid">
           <div class="detail-info-item">
             <span class="info-label">入库单号</span>
@@ -321,15 +321,15 @@
           </div>
         </div>
         <el-table v-if="detailData" :data="detailData.details" stripe size="small" style="margin-top: 16px">
-          <el-table-column prop="materialCode" label="物料号" width="140" />
-          <el-table-column prop="packCapacity" label="单箱容量" width="90" align="right" />
-          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
-          <el-table-column prop="actualQty" label="实收数" width="80" align="right" />
+          <el-table-column prop="materialCode" label="物料号" min-width="140" />
+          <el-table-column prop="packCapacity" label="单箱容量" width="100" align="center" />
+          <el-table-column prop="planQty" label="计划数" width="100" align="center" />
+          <el-table-column prop="actualQty" label="实收数" width="100" align="center" />
         </el-table>
-        <!-- 箱单标签展示（点击可下载完整标签 PNG） -->
+        <!-- 入库看板（点击可下载完整标签 PNG） -->
         <div v-if="detailData && detailData.barcodes && detailData.barcodes.length > 0"
           class="barcode-gallery">
-          <div class="barcode-gallery-title">箱单标签（共 {{ detailData.barcodes.length }} 个，点击可下载完整标签）</div>
+          <div class="barcode-gallery-title">入库看板（共 {{ detailData.barcodes.length }} 个，点击可下载完整标签）</div>
           <div class="label-grid">
             <div v-for="bc in detailData.barcodes" :key="bc.barcode" class="label-card"
               @click="downloadLabel(bc, $event)">
@@ -380,7 +380,7 @@
                 <span class="catalog-hint">已选 {{ editCatalogChecked.length }} / {{ editCatalogMaterials.length }} 种</span>
               </div>
               <div class="catalog-scroll">
-                <el-table :data="filteredEditCatalog" size="small" max-height="200"
+                <el-table :data="filteredEditCatalog" size="small" max-height="300"
                   @selection-change="onEditCatalogSelect" ref="editCatalogTableRef" row-key="materialCode">
                   <el-table-column type="selection" width="36" :selectable="editCatalogSelectable" />
                   <el-table-column prop="materialCode" label="物料号" width="140" />
@@ -500,10 +500,10 @@
                 </tr>
               </tbody>
             </table>
-            <!-- 箱单标签 -->
+            <!-- 入库看板 -->
             <div v-if="printOrder.barcodes && printOrder.barcodes.length > 0"
               class="print-labels">
-              <div class="barcode-gallery-title">箱单标签（共 {{ printOrder.barcodes.length }} 个）</div>
+              <div class="barcode-gallery-title">入库看板（共 {{ printOrder.barcodes.length }} 个）</div>
               <div class="label-print-grid">
                 <div v-for="bc in printOrder.barcodes" :key="bc.barcode" class="label-print-item">
                   <BoxLabel :barcode="bc.barcode"
@@ -543,7 +543,7 @@
                 <span class="catalog-hint">已选 {{ outCatalogChecked.length }} / {{ outCatalogMaterials.length }} 种</span>
               </div>
               <div class="catalog-scroll">
-                <el-table :data="filteredOutCatalog" size="small" max-height="200"
+                <el-table :data="filteredOutCatalog" size="small" max-height="300"
                   @selection-change="onOutCatalogSelect" ref="outCatalogTableRef" row-key="materialCode">
                   <el-table-column type="selection" width="36" :selectable="outCatalogSelectable" />
                   <el-table-column prop="materialCode" label="物料号" width="140" />
@@ -653,12 +653,12 @@
           </span>
         </div>
         <el-table :data="outConfirmDetails" stripe size="small" style="margin-top: 12px">
-          <el-table-column prop="materialCode" label="物料号" width="130" />
-          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
-          <el-table-column label="已出数" width="80" align="right">
+          <el-table-column prop="materialCode" label="物料号" min-width="130" />
+          <el-table-column prop="planQty" label="计划数" width="90" align="center" />
+          <el-table-column label="已出数" width="90" align="center">
             <template #default="{ row }">{{ row.actualQty || 0 }}</template>
           </el-table-column>
-          <el-table-column label="本次出库数" width="130">
+          <el-table-column label="本次出库数" width="130" align="center">
             <template #default="{ row, $index }">
               <el-input-number v-model="row._confirmQty" :min="0"
                 :max="(row.planQty || 0) - (row.actualQty || 0)"
@@ -698,7 +698,7 @@
     <!-- 出库单详情对话框 (Teleport to body) -->
     <Teleport to="body">
       <el-dialog v-model="outDetailVisible" title="出库单详情"
-        width="min(700px, calc(100vw - 32px))" destroy-on-close>
+        width="min(720px, calc(100vw - 32px))" destroy-on-close>
         <div v-if="outDetailData" class="detail-info-grid">
           <div class="detail-info-item">
             <span class="info-label">出库单号</span>
@@ -718,15 +718,15 @@
         <!-- 明细表 -->
         <el-table v-if="outDetailData" :data="outDetailData.details" stripe size="small"
           style="margin-top: 16px">
-          <el-table-column prop="materialCode" label="物料号" width="140" />
-          <el-table-column prop="packCapacity" label="单箱容量" width="90" align="right" />
-          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
-          <el-table-column prop="actualQty" label="实出数" width="80" align="right" />
+          <el-table-column prop="materialCode" label="物料号" min-width="140" />
+          <el-table-column prop="packCapacity" label="单箱容量" width="100" align="center" />
+          <el-table-column prop="planQty" label="计划数" width="100" align="center" />
+          <el-table-column prop="actualQty" label="实出数" width="100" align="center" />
         </el-table>
-        <!-- 出库标签画廊（出库单创建时已封装，可下载打印后用于扫码出库） -->
+        <!-- 出库看板（出库单创建时已封装，可下载打印后用于扫码出库） -->
         <div v-if="outDetailData && outDetailData.barcodes && outDetailData.barcodes.length > 0"
           class="barcode-gallery">
-          <div class="barcode-gallery-title">出库标签（共 {{ outDetailData.barcodes.length }} 个，点击可下载完整标签）</div>
+          <div class="barcode-gallery-title">出库看板（共 {{ outDetailData.barcodes.length }} 个，点击可下载完整标签）</div>
           <div class="label-grid">
             <div v-for="bc in outDetailData.barcodes" :key="bc.barcode" class="label-card"
               @click="downloadOutLabel(bc, $event)">
@@ -766,7 +766,7 @@
     <el-drawer v-model="outEditVisible" title="修改出库单"
       direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
       @opened="onOutEditDialogOpened">
-        <el-alert title="修改后将重新执行整箱拣选，原出库标签将被替换。"
+        <el-alert title="修改后将重新执行整箱拣选，原出库看板标签将被替换。"
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="outEditFormRef" :model="outEditForm" label-width="88px">
 
@@ -781,7 +781,7 @@
                 <span class="catalog-hint">已选 {{ outEditCatalogChecked.length }} / {{ outEditCatalogMaterials.length }} 种</span>
               </div>
               <div class="catalog-scroll">
-                <el-table :data="filteredOutEditCatalog" size="small" max-height="200"
+                <el-table :data="filteredOutEditCatalog" size="small" max-height="300"
                   @selection-change="onOutEditCatalogSelect" ref="outEditCatalogTableRef" row-key="materialCode">
                   <el-table-column type="selection" width="36" :selectable="outEditCatalogSelectable" />
                   <el-table-column prop="materialCode" label="物料号" width="140" />
@@ -2356,13 +2356,11 @@ function onOutEditDialogOpened() {
   color: var(--text-primary);
   margin-bottom: 12px;
 }
-/* 使用网格布局适配长方形标签 */
+/* 标签网格（无内部滚动，由全局 el-dialog__body 统一滚动） */
 .label-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
-  max-height: 560px;
-  overflow-y: auto;
 }
 .label-card {
   display: flex;
@@ -2541,7 +2539,6 @@ function onOutEditDialogOpened() {
   margin-left: auto;
 }
 .catalog-scroll {
-  max-height: 220px;
   overflow-y: auto;
 }
 .catalog-actions {
@@ -2576,10 +2573,8 @@ function onOutEditDialogOpened() {
   color: var(--wms-primary);
 }
 
-/* ==================== 明细滚动区 ==================== */
+/* ==================== 明细列表区（抽屉自带滚动，此处不设 max-height） ==================== */
 .detail-scroll {
-  max-height: 320px;
-  overflow-y: auto;
   border: 1px solid var(--border-light);
   border-radius: 4px;
   padding: 6px;
@@ -2658,9 +2653,3 @@ function onOutEditDialogOpened() {
 }
 </style>
 
-<style>
-.el-drawer__body {
-  padding: 20px 24px;
-  overflow-y: auto;
-}
-</style>

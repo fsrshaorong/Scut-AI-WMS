@@ -187,6 +187,24 @@ input:-webkit-autofill:active {
   transition: background-color 9999s ease-in-out 0s;
 }
 
+/* ========== 全局弹窗/抽屉滚动约束 ========== */
+/* 所有 el-dialog：限制最大高度，body 为唯一滚动层 */
+/* （Element Plus 组件样式按需注入会覆盖普通规则，故用 !important 确保生效） */
+.el-dialog__body {
+  max-height: calc(80vh - 140px) !important;
+  overflow-y: auto !important;
+}
+/* el-drawer：全高，body 为唯一滚动层 */
+.el-drawer__body {
+  padding: 20px 24px !important;
+  overflow-y: auto !important;
+  height: 100% !important;
+}
+.el-drawer__body .el-form,
+.el-drawer__body .el-tabs {
+  overflow: visible !important;
+}
+
 /* 以下为全局通用工具样式 */
 
 @media (max-width: 768px) {
@@ -278,9 +296,9 @@ input:-webkit-autofill:active {
   }
 
   .el-dialog__body {
-    max-height: 68vh;
-    overflow-y: auto;
-    padding: 14px;
+    max-height: 68vh !important;
+    overflow-y: auto !important;
+    padding: 14px !important;
     -webkit-overflow-scrolling: touch;
   }
 

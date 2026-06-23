@@ -90,10 +90,10 @@
           </div>
         </div>
         <el-table v-if="detailData" :data="detailData.details" stripe size="small" style="margin-top: 16px">
-          <el-table-column prop="materialCode" label="物料号" width="140" />
-          <el-table-column prop="packCapacity" label="单箱容量" width="90" align="right" />
-          <el-table-column prop="planQty" label="计划数" width="80" align="right" />
-          <el-table-column prop="actualQty" label="实收数" width="80" align="right" />
+          <el-table-column prop="materialCode" label="物料号" min-width="140" />
+          <el-table-column prop="packCapacity" label="单箱容量" width="100" align="center" />
+          <el-table-column prop="planQty" label="计划数" width="100" align="center" />
+          <el-table-column prop="actualQty" label="实收数" width="100" align="center" />
         </el-table>
         <template #footer>
           <el-button @click="detailVisible = false">关闭</el-button>
