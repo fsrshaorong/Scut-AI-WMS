@@ -1,33 +1,37 @@
 <!--
-  手机端首页 — 四个操作按钮。
+  PDA 首页 — 扫码操作入口 + 工作台跳转。
   @author Focus
   @date 2026-06-24
 -->
 <template>
   <div class="home-page">
     <div class="btn-list">
-      <div class="action-btn" @click="$router.push('/mobile/scan/inbound')">
+      <div class="action-btn" @click="$router.push('/pda/scan/inbound')">
         <el-icon :size="28"><Box /></el-icon>
         <span>入库</span>
       </div>
-      <div class="action-btn" @click="$router.push('/mobile/scan/outbound')">
+      <div class="action-btn" @click="$router.push('/pda/scan/outbound')">
         <el-icon :size="28"><Sell /></el-icon>
         <span>出库</span>
       </div>
-      <div class="action-btn" @click="$router.push('/mobile/scan/seal')">
+      <div class="action-btn" @click="$router.push('/pda/scan/seal')">
         <el-icon :size="28"><Lock /></el-icon>
         <span>封存</span>
       </div>
-      <div class="action-btn" @click="$router.push('/mobile/scan/unseal')">
+      <div class="action-btn" @click="$router.push('/pda/scan/unseal')">
         <el-icon :size="28"><Unlock /></el-icon>
         <span>解封</span>
+      </div>
+      <div class="action-btn workbench-btn" @click="$router.push('/dashboard')">
+        <el-icon :size="28"><Monitor /></el-icon>
+        <span>工作台</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { Box, Sell, Lock, Unlock } from '@element-plus/icons-vue'
+import { Box, Sell, Lock, Unlock, Monitor } from '@element-plus/icons-vue'
 </script>
 
 <style scoped>
@@ -43,4 +47,7 @@ import { Box, Sell, Lock, Unlock } from '@element-plus/icons-vue'
   background: #409eff;
 }
 .action-btn:active { transform: scale(0.97); opacity: 0.9; }
+.workbench-btn {
+  background: #67c23a;
+}
 </style>

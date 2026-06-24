@@ -4,7 +4,7 @@
   @date 2026-06-11
 -->
 <template>
-  <!-- ========== 内联模式：直接嵌入页面（手机端） ========== -->
+  <!-- ========== 内联模式：直接嵌入页面（PDA 端） ========== -->
   <div v-if="inline">
     <div :id="inlineCameraId" class="camera-container-inline"></div>
     <div v-if="cameraError" class="scan-error-inline">

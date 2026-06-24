@@ -5,6 +5,7 @@
  * @date 2026-06-03
  */
 import { createRouter, createWebHistory } from 'vue-router'
+import { getHomeRoute, isMobile } from '@/utils/device'
 
 const routes = [
   {
@@ -81,30 +82,30 @@ const routes = [
     ]
   },
   {
-    // 手机端
-    path: '/mobile',
+    // PDA 手持端
+    path: '/pda',
     component: () => import('@/components/MobileLayout.vue'),
     meta: { noAuth: false },
     children: [
       {
         path: '',
-        name: 'MobileHome',
+        name: 'PdaHome',
         component: () => import('@/views/MobileHome.vue'),
-        meta: { title: '智库WMS' }
+        meta: { title: 'PDA 扫码作业' }
       },
       {
         path: 'scan/:mode',
-        name: 'MobileScanner',
+        name: 'PdaScanner',
         component: () => import('@/views/MobileScanner.vue'),
-        meta: { title: '扫码' },
+        meta: { title: 'PDA 扫码' },
         props: true
       }
     ]
   },
   {
-    // 未匹配路由重定向到仪表盘
+    // 未匹配路由重定向
     path: '/:pathMatch(.*)*',
-    redirect: '/dashboard'
+    redirect: () => getHomeRoute()
   }
 ]
 
@@ -114,19 +115,32 @@ const router = createRouter({
 })
 
 /**
- * 全局路由守卫：非登录页无 Token 时强制跳转登录页。
+ * 全局路由守卫：鉴权 + 移动端/桌面端路由分流。
  */
 router.beforeEach((to, _from, next) => {
-  // 检查 localStorage 中的 JWT
   const token = localStorage.getItem('token')
+
+  // 1. 未登录 → 强制跳转登录页
   if (!to.meta.noAuth && !token) {
     next('/login')
-  } else if ((to.path === '/login' || to.path === '/register') && token) {
-    // 已登录用户访问登录/注册页直接跳仪表盘
-    next('/dashboard')
-  } else {
-    next()
+    return
   }
+
+  // 2. 已登录访问登录/注册页 → 按设备类型跳转首页
+  if ((to.path === '/login' || to.path === '/register') && token) {
+    next(getHomeRoute())
+    return
+  }
+
+  // 3. PDA/移动端访问桌面路由 → 重定向到 PDA 首页
+  if (token && isMobile()
+      && to.path !== '/pda' && !to.path.startsWith('/pda/')
+      && to.path !== '/login' && to.path !== '/register') {
+    next('/pda')
+    return
+  }
+
+  next()
 })
 
 export default router

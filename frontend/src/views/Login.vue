@@ -46,6 +46,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { login } from '@/api/auth'
+import { getHomeRoute } from '@/utils/device'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -69,7 +70,7 @@ async function handleLogin() {
     const data = await login(form.username, form.password)
     userStore.setLogin(form.username, data.token)
     ElMessage.success('登录成功，欢迎回来')
-    router.push('/dashboard')
+    router.push(getHomeRoute())
   } catch {
     ElMessage.error('用户名或密码错误')
   } finally {

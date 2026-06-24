@@ -60,6 +60,11 @@
           <el-icon :size="18"><Camera /></el-icon>
           <span class="nav-label">扫码操作</span>
         </router-link>
+        <router-link to="/pda" class="nav-item"
+          :class="{ active: $route.path.startsWith('/pda') }" @click="mobileMenuOpen = false">
+          <el-icon :size="18"><Iphone /></el-icon>
+          <span class="nav-label">PDA</span>
+        </router-link>
         <router-link to="/freeze" class="nav-item"
           :class="{ active: $route.path.startsWith('/freeze') }" @click="mobileMenuOpen = false">
           <el-icon :size="18"><Lock /></el-icon>
@@ -129,7 +134,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { DataAnalysis, Document, Switch, TrendCharts, Cpu, Search, Camera, Clock, Lock, DArrowLeft, DArrowRight, UserFilled, WarningFilled, Menu, Close } from '@element-plus/icons-vue'
+import { DataAnalysis, Document, Switch, TrendCharts, Cpu, Search, Camera, Clock, Lock, DArrowLeft, DArrowRight, UserFilled, WarningFilled, Menu, Close, Iphone } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

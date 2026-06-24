@@ -1,5 +1,5 @@
 <!--
-  移动端布局壳 — 顶部标题栏 + 内容区（无底部TabBar）。
+  PDA 手持端布局壳 — 顶部标题栏 + 内容区。
   @author Focus
   @date 2026-06-24
 -->
@@ -24,22 +24,22 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 const route = useRoute()
 const router = useRouter()
 
-const showBack = computed(() => route.path !== '/mobile')
+const showBack = computed(() => route.path !== '/pda')
 const title = computed(() => {
-  if (route.path === '/mobile') return '智库WMS'
+  if (route.path === '/pda') return 'PDA 扫码作业'
   const map = { inbound: '入库扫码', outbound: '出库扫码', seal: '封存扫码', unseal: '解封扫码' }
-  return map[route.params.mode] || '智库WMS'
+  return map[route.params.mode] || 'PDA 扫码'
 })
 
 function goBack() { router.back() }
 </script>
 
 <style scoped>
-/* 桌面端：手机模拟区域居中，两侧透明 */
+/* 桌面端：PDA 模拟区域居中 */
 .mobile-shell {
   display: flex; flex-direction: column; height: 100vh; height: 100dvh;
   background: #f0f2f5; overflow: hidden;
-  /* 桌面端限制宽度≈0.5*高度，模拟手机比例；手机端全宽 */
+  /* 桌面端限制宽度模拟 PDA 比例；PDA 端全宽 */
   width: 100%; max-width: 420px; margin: 0 auto;
   box-shadow: 0 0 20px rgba(0,0,0,0.3);
 }
