@@ -15,7 +15,17 @@ public class StockReportVO {
     private Integer stockQty;
     private Integer minStockDays;
     private Integer maxStockDays;
+    private Integer safetyStock;
+    private Integer leadTimeDays;
     private String ruleEvaluation;
+    /** 近30天日均消耗量（件/天） */
+    private Double dailyConsume;
+    /** 库存未来持有天数 DOHF = stockQty / dailyConsume */
+    private Double dohf;
+    /** 最后一次出库日期 */
+    private LocalDateTime lastOutboundDate;
+    /** 闲置天数（自最后出库至今） */
+    private Integer idleDays;
     private LocalDateTime updatedAt;
 
     // ==================== Getters / Setters ====================
@@ -35,8 +45,26 @@ public class StockReportVO {
     public Integer getMaxStockDays() { return maxStockDays; }
     public void setMaxStockDays(Integer maxStockDays) { this.maxStockDays = maxStockDays; }
 
+    public Integer getSafetyStock() { return safetyStock; }
+    public void setSafetyStock(Integer safetyStock) { this.safetyStock = safetyStock; }
+
+    public Integer getLeadTimeDays() { return leadTimeDays; }
+    public void setLeadTimeDays(Integer leadTimeDays) { this.leadTimeDays = leadTimeDays; }
+
     public String getRuleEvaluation() { return ruleEvaluation; }
     public void setRuleEvaluation(String ruleEvaluation) { this.ruleEvaluation = ruleEvaluation; }
+
+    public Double getDailyConsume() { return dailyConsume; }
+    public void setDailyConsume(Double dailyConsume) { this.dailyConsume = dailyConsume; }
+
+    public Double getDohf() { return dohf; }
+    public void setDohf(Double dohf) { this.dohf = dohf; }
+
+    public LocalDateTime getLastOutboundDate() { return lastOutboundDate; }
+    public void setLastOutboundDate(LocalDateTime lastOutboundDate) { this.lastOutboundDate = lastOutboundDate; }
+
+    public Integer getIdleDays() { return idleDays; }
+    public void setIdleDays(Integer idleDays) { this.idleDays = idleDays; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }

@@ -317,7 +317,7 @@
         <!-- 入库看板（点击可下载完整标签 PNG） -->
         <div v-if="detailData && detailData.barcodes && detailData.barcodes.length > 0"
           class="barcode-gallery">
-          <div class="barcode-gallery-title">入库看板（共 {{ detailData.barcodes.length }} 个，点击可下载完整标签）</div>
+          <div class="barcode-gallery-title">入库看板（共 {{ detailData.barcodes.length }} 个）</div>
           <div class="label-grid">
             <div v-for="bc in detailData.barcodes" :key="bc.barcode" class="label-card"
               @click="downloadLabel(bc, $event)">
@@ -707,7 +707,7 @@
         <!-- 出库看板（一码到底：显示已拣选的入库条码） -->
         <div v-if="outDetailData && outDetailData.barcodes && outDetailData.barcodes.length > 0"
           class="barcode-gallery">
-          <div class="barcode-gallery-title">出库看板（共 {{ outDetailData.barcodes.length }} 个入库条码，一码到底）</div>
+          <div class="barcode-gallery-title">出库看板（共 {{ outDetailData.barcodes.length }} 个）</div>
           <div class="label-grid">
             <div v-for="bc in outDetailData.barcodes" :key="bc.barcode" class="label-card"
               @click="downloadOutLabel(bc, $event)">

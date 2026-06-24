@@ -170,7 +170,7 @@ function riskBadge(r) {
   return m[r] || 'default'
 }
 function riskLabel(r) {
-  const m = { 'LOW_STOCK': '⚠ 断供预警', 'DEAD_STOCK': '📉 滞销风险', 'BOTH': '🚨 双重风险', 'NORMAL': '✅ 正常' }
+  const m = { 'LOW_STOCK': '⚠ 断供预警', 'DEAD_STOCK': '📉 呆滞风险', 'BOTH': '🚨 双重风险', 'NORMAL': '✅ 正常' }
   return m[r] || r
 }
 function levelBadge(l) {

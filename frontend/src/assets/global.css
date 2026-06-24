@@ -85,20 +85,6 @@ body {
   background: #909399;
 }
 
-/* ========== 表格行高亮 ========== */
-.low-stock-row {
-  background-color: #fef0f0 !important;
-}
-.low-stock-row:hover > td {
-  background-color: #fde2e2 !important;
-}
-.high-stock-row {
-  background-color: #fdf6ec !important;
-}
-.high-stock-row:hover > td {
-  background-color: #faecd8 !important;
-}
-
 /* ========== 页面通用容器 ========== */
 .page-container {
   padding: 20px;

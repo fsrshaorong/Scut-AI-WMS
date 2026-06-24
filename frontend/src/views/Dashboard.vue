@@ -43,11 +43,21 @@
       </div>
       <el-table :data="pagedStockData" stripe size="small">
         <el-table-column prop="materialCode" label="物料号" width="130" />
-        <el-table-column prop="materialName" label="物料名称" min-width="140" />
-        <el-table-column prop="stockQty" label="当前库存" width="90" align="right" />
-        <el-table-column prop="minStockDays" label="低储(天)" width="80" align="center" />
-        <el-table-column prop="maxStockDays" label="高储(天)" width="80" align="center" />
-        <el-table-column label="评级" width="100" align="center">
+        <el-table-column prop="materialName" label="物料名称" min-width="120" />
+        <el-table-column prop="stockQty" label="当前库存" width="80" align="right" />
+        <el-table-column label="日均消耗" width="75" align="right">
+          <template #default="{ row }">{{ row.dailyConsume != null ? row.dailyConsume.toFixed(1) : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="安全库存" width="70" align="right">
+          <template #default="{ row }">{{ row.safetyStock ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="最后出库" width="95" align="center">
+          <template #default="{ row }">
+            <span v-if="row.lastOutboundDate">{{ row.lastOutboundDate?.substring(0, 10) }}</span>
+            <span v-else style="color:#909399">无记录</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="评级" width="85" align="center">
           <template #default="{ row }">
             <span class="badge" :class="'badge-' + badgeClass(row.ruleEvaluation)">
               {{ ruleLabel(row.ruleEvaluation) }}
@@ -118,7 +128,7 @@ const levelPieOption = computed(() => {
         { value: counts.NORMAL, name: '正常', itemStyle: { color: '#67c23a' } },
         { value: counts.LOW_STOCK, name: '低储', itemStyle: { color: '#f56c6c' } },
         { value: counts.HIGH, name: '高储', itemStyle: { color: '#e6a23c' } },
-        { value: counts.DEAD_STOCK, name: '滞销', itemStyle: { color: '#606266' } }
+        { value: counts.DEAD_STOCK, name: '呆滞', itemStyle: { color: '#606266' } }
       ]
     }]
   }
@@ -229,7 +239,7 @@ function badgeClass(v) {
   return m[v] || 'default'
 }
 function ruleLabel(v) {
-  const m = { 'LOW_STOCK': '低储', 'HIGH': '高储', 'DEAD_STOCK': '滞销', 'NORMAL': '正常' }
+  const m = { 'LOW_STOCK': '低储', 'HIGH': '高储', 'DEAD_STOCK': '呆滞', 'NORMAL': '正常' }
   return m[v] || v
 }
 </script>

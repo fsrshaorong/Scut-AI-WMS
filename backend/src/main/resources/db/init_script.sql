@@ -1,8 +1,8 @@
 -- ===================================================================
--- 智库WMS - 数据库初始化脚本
--- 种子数据由 DataInitializer 通过 JDBC 插入，避免 H2 编码问题
+-- 智库WMS - MySQL 数据库初始化 DDL 脚本
+-- 种子数据请使用 seed_data.sql 导入
 -- @author Focus
--- @date 2026-06-03
+-- @date 2026-06-24
 -- ===================================================================
 
 -- 1. 系统用户表
@@ -91,13 +91,15 @@ CREATE TABLE IF NOT EXISTS `suppliers` (
 
 -- 9. 物理实际库存记录表
 CREATE TABLE IF NOT EXISTS `inventories` (
-  `id`             BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-  `material_code`  VARCHAR(100) NOT NULL UNIQUE COMMENT '物料号',
-  `stock_qty`      INT NOT NULL DEFAULT 0 COMMENT '当前仓库实物库存现存量',
-  `min_stock_days` INT NOT NULL DEFAULT 3 COMMENT '安全低储控制天数',
-  `max_stock_days` INT NOT NULL DEFAULT 15 COMMENT '安全高储积压控制天数',
-  `created_at`     DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `id`              BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+  `material_code`   VARCHAR(100) NOT NULL UNIQUE COMMENT '物料号',
+  `stock_qty`       INT NOT NULL DEFAULT 0 COMMENT '当前仓库实物库存现存量',
+  `min_stock_days`  INT NOT NULL DEFAULT 3 COMMENT '安全低储控制天数',
+  `max_stock_days`  INT NOT NULL DEFAULT 15 COMMENT '安全高储积压控制天数',
+  `safety_stock`    INT NOT NULL DEFAULT 0 COMMENT '安全库存量（件），用于吸收需求波动',
+  `lead_time_days`  INT NOT NULL DEFAULT 7 COMMENT '补货提前期天数（下单→上架全周期）',
+  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- 10. 手工入库订单主表
@@ -206,6 +208,6 @@ CREATE TABLE IF NOT EXISTS `inventory_freezes` (
 );
 
 -- ===================================================================
--- 种子数据由 DataInitializer.java 通过 JDBC 插入
--- 避免 SQL 文件编码导致 H2 中文乱码
+-- 种子数据请使用 seed_data.sql 通过 MySQL 客户端导入:
+--   mysql -u root -p smart_wms_dev < seed_data.sql
 -- ===================================================================

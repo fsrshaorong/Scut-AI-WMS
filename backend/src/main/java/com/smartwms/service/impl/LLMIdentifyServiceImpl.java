@@ -1,8 +1,9 @@
 /**
  * AI 智能预测服务实现（桩实现，后续对接大模型 API）。
+ * 使用 Mock 引擎生成降级报告，覆盖四级评级体系。
  *
  * @author Focus
- * @date 2026-06-03
+ * @date 2026-06-24
  */
 package com.smartwms.service.impl;
 
@@ -10,10 +11,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.smartwms.common.BusinessException;
 import com.smartwms.common.ErrorCode;
 import com.smartwms.entity.AiReport;
+import com.smartwms.entity.Barcode;
 import com.smartwms.entity.Inventory;
 import com.smartwms.entity.OutboundHistory;
 import com.smartwms.engine.RuleMockEngine;
 import com.smartwms.mapper.AiReportMapper;
+import com.smartwms.mapper.BarcodeMapper;
 import com.smartwms.mapper.InventoryMapper;
 import com.smartwms.mapper.OutboundHistoryMapper;
 import com.smartwms.service.LLMIdentifyService;
@@ -24,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -31,18 +35,24 @@ public class LLMIdentifyServiceImpl implements LLMIdentifyService {
 
     private static final Logger log = LoggerFactory.getLogger(LLMIdentifyServiceImpl.class);
 
+    /** 呆滞判定阈值：超过此天数无出库即视为呆滞 */
+    private static final int DEAD_STOCK_DAYS = 90;
+
     private final AiReportMapper aiReportMapper;
     private final InventoryMapper inventoryMapper;
     private final OutboundHistoryMapper outboundHistoryMapper;
+    private final BarcodeMapper barcodeMapper;
     private final RuleMockEngine ruleMockEngine;
 
     public LLMIdentifyServiceImpl(AiReportMapper aiReportMapper,
                                    InventoryMapper inventoryMapper,
                                    OutboundHistoryMapper outboundHistoryMapper,
+                                   BarcodeMapper barcodeMapper,
                                    RuleMockEngine ruleMockEngine) {
         this.aiReportMapper = aiReportMapper;
         this.inventoryMapper = inventoryMapper;
         this.outboundHistoryMapper = outboundHistoryMapper;
+        this.barcodeMapper = barcodeMapper;
         this.ruleMockEngine = ruleMockEngine;
     }
 
@@ -108,12 +118,12 @@ public class LLMIdentifyServiceImpl implements LLMIdentifyService {
             // TODO(Focus, 2026-06-03): 后续对接真实大模型 API 替换此桩实现
             Inventory inventory = inventoryMapper.selectById(materialId);
 
-            // 从近30天出库流水计算真实日均消耗和未来15天需求预测
             double dailyConsume = computeDailyConsume(report.getMaterialCode());
             double futureDemand = dailyConsume * 15.0;
+            int idleDays = computeIdleDays(report.getMaterialCode());
 
             AiReport mockReport = ruleMockEngine.generateMockReport(
-                    report.getMaterialCode(), inventory, dailyConsume, futureDemand
+                    report.getMaterialCode(), inventory, dailyConsume, futureDemand, idleDays
             );
 
             // 将 Mock 结果回写到报告记录
@@ -131,12 +141,13 @@ public class LLMIdentifyServiceImpl implements LLMIdentifyService {
                     report.getRiskType());
         } catch (Exception e) {
             log.warn("[AI-API-Timeout] 调用外部LLM接口超时异常，系统无缝启动精益Mock规则引擎拼装基础降级报告方案");
-            // 兜底：调用 Mock 引擎（使用真实日均消耗）
+            // 兜底：调用 Mock 引擎
             Inventory inventory = inventoryMapper.selectById(materialId);
             double dailyConsume = computeDailyConsume(report.getMaterialCode());
             double futureDemand = dailyConsume * 15.0;
+            int idleDays = computeIdleDays(report.getMaterialCode());
             AiReport fallback = ruleMockEngine.generateMockReport(
-                    report.getMaterialCode(), inventory, dailyConsume, futureDemand
+                    report.getMaterialCode(), inventory, dailyConsume, futureDemand, idleDays
             );
             fallback.setPredictionStatus("MOCKED");
             fallback.setUpdatedAt(LocalDateTime.now());
@@ -148,7 +159,7 @@ public class LLMIdentifyServiceImpl implements LLMIdentifyService {
 
     /**
      * 根据近30天出库流水计算物料日均消耗量。
-     * 若无出库记录则返回默认值 10 件/天。
+     * 若无出库记录则返回 0（由呆滞检测兜底）。
      */
     private double computeDailyConsume(String materialCode) {
         LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
@@ -157,10 +168,46 @@ public class LLMIdentifyServiceImpl implements LLMIdentifyService {
                         .eq(OutboundHistory::getMaterialCode, materialCode)
                         .ge(OutboundHistory::getCreatedAt, thirtyDaysAgo)
         );
-        if (histories.isEmpty()) return 10.0;
+        if (histories.isEmpty()) {
+            return 0.0;
+        }
         int totalDeduct = histories.stream()
                 .mapToInt(h -> h.getDeductQty() != null ? h.getDeductQty() : 0)
                 .sum();
-        return Math.max(1.0, (double) totalDeduct / 30.0);
+        return Math.max(0.0, (double) totalDeduct / 30.0);
+    }
+
+    /**
+     * 计算物料闲置天数（自最后一次出库至今）。
+     * 若从未出库，则以最早入库条码日期为参考起点。
+     */
+    private int computeIdleDays(String materialCode) {
+        // 查询最后出库日期
+        OutboundHistory last = outboundHistoryMapper.selectOne(
+                new LambdaQueryWrapper<OutboundHistory>()
+                        .eq(OutboundHistory::getMaterialCode, materialCode)
+                        .orderByDesc(OutboundHistory::getCreatedAt)
+                        .last("LIMIT 1")
+        );
+
+        LocalDateTime referenceDate;
+        if (last != null) {
+            referenceDate = last.getCreatedAt();
+        } else {
+            // 从未出库，以最早入库条码时间为参考
+            Barcode first = barcodeMapper.selectOne(
+                    new LambdaQueryWrapper<Barcode>()
+                            .eq(Barcode::getMaterialCode, materialCode)
+                            .eq(Barcode::getType, "inbound")
+                            .orderByAsc(Barcode::getCreatedAt)
+                            .last("LIMIT 1")
+            );
+            if (first == null) {
+                return 0; // 无任何记录，视为新物料
+            }
+            referenceDate = first.getCreatedAt();
+        }
+
+        return (int) ChronoUnit.DAYS.between(referenceDate, LocalDateTime.now());
     }
 }

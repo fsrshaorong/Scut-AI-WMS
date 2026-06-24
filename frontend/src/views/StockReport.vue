@@ -24,6 +24,7 @@
           <el-option label="正常" value="NORMAL" />
           <el-option label="低储" value="LOW" />
           <el-option label="高储" value="HIGH" />
+          <el-option label="呆滞" value="DEAD_STOCK" />
         </el-select>
         <el-button size="small" @click="loadReport">刷新</el-button>
         <el-button size="small" @click="doExport">导出 CSV</el-button>
@@ -31,28 +32,49 @@
       </div>
 
       <el-table :data="reportData" stripe size="small" v-loading="loading"
-        :row-class-name="rowClass" style="width: 100%">
-        <el-table-column prop="materialCode" label="物料号" width="140" />
-        <el-table-column prop="materialName" label="物料名称" min-width="150" />
-        <el-table-column prop="stockQty" label="当前库存" width="100" align="right" />
-        <el-table-column label="低储阈值" width="100" align="center">
-          <template #default="{ row }">{{ row.minStockDays }} 天</template>
+        style="width: 100%">
+        <el-table-column prop="materialCode" label="物料号" width="130" />
+        <el-table-column prop="materialName" label="物料名称" min-width="120" />
+        <el-table-column prop="stockQty" label="当前库存" width="80" align="right" />
+        <el-table-column label="日均消耗" width="75" align="right">
+          <template #default="{ row }">{{ row.dailyConsume != null ? row.dailyConsume.toFixed(1) : '—' }}</template>
         </el-table-column>
-        <el-table-column label="高储阈值" width="100" align="center">
-          <template #default="{ row }">{{ row.maxStockDays }} 天</template>
+        <el-table-column label="DOHF(天)" width="75" align="right">
+          <template #default="{ row }">
+            <span v-if="row.dohf != null && row.dohf > 0 && row.dohf < 9999">{{ row.dohf.toFixed(1) }}</span>
+            <span v-else-if="row.dohf >= 9999" style="color:#e6a23c">极高</span>
+            <span v-else style="color:#909399">—</span>
+          </template>
         </el-table-column>
-        <el-table-column label="内置评级" width="100" align="center">
+        <el-table-column label="安全库存" width="70" align="right">
+          <template #default="{ row }">{{ row.safetyStock ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="提前期(天)" width="75" align="center">
+          <template #default="{ row }">{{ row.leadTimeDays ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="最后出库" width="90" align="center">
+          <template #default="{ row }">
+            <span v-if="row.lastOutboundDate">{{ row.lastOutboundDate?.substring(0, 10) }}</span>
+            <span v-else style="color:#909399">无记录</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="闲置天数" width="72" align="center">
+          <template #default="{ row }">
+            <span :style="{ color: row.idleDays >= 90 ? '#f56c6c' : '' }">{{ row.idleDays ?? '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="评级" width="75" align="center">
           <template #default="{ row }">
             <span class="badge" :class="'badge-' + badgeClass(row.ruleEvaluation)">
               {{ ruleLabel(row.ruleEvaluation) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center">
+        <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-button type="primary" link size="small"
               :loading="predicting === row.materialCode"
-              @click="handlePredict(row)">AI 深度推演</el-button>
+              @click="handlePredict(row)">AI 推演</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -93,18 +115,12 @@ async function handlePredict(row) {
   catch { ElMessage.error('启动失败') } finally { predicting.value = null }
 }
 
-function rowClass({ row }) {
-  if (row.ruleEvaluation === 'LOW_STOCK') return 'low-stock-row'
-  if (row.ruleEvaluation === 'HIGH' || row.ruleEvaluation === 'DEAD_STOCK') return 'high-stock-row'
-  return ''
-}
-
 function badgeClass(v) {
   const m = { 'LOW_STOCK': 'danger', 'DEAD_STOCK': 'dead', 'HIGH': 'warning', 'NORMAL': 'success' }
   return m[v] || 'default'
 }
 function ruleLabel(v) {
-  const m = { 'LOW_STOCK': '低储', 'DEAD_STOCK': '滞销', 'HIGH': '高储', 'NORMAL': '正常' }
+  const m = { 'LOW_STOCK': '低储', 'DEAD_STOCK': '呆滞', 'HIGH': '高储', 'NORMAL': '正常' }
   return m[v] || v
 }
 
@@ -142,7 +158,7 @@ const pieOption = computed(() => {
         { value: counts.NORMAL, name: '正常', itemStyle: { color: '#67c23a' } },
         { value: counts.LOW_STOCK, name: '低储', itemStyle: { color: '#f56c6c' } },
         { value: counts.HIGH, name: '高储', itemStyle: { color: '#e6a23c' } },
-        { value: counts.DEAD_STOCK, name: '滞销', itemStyle: { color: '#606266' } }
+        { value: counts.DEAD_STOCK, name: '呆滞', itemStyle: { color: '#606266' } }
       ]
     }]
   }
@@ -154,8 +170,12 @@ function doExport() {
     { key: 'materialCode', label: '物料号' },
     { key: 'materialName', label: '物料名称' },
     { key: 'stockQty', label: '当前库存' },
-    { key: 'minStockDays', label: '低储天数' },
-    { key: 'maxStockDays', label: '高储天数' },
+    { key: 'dailyConsume', label: '日均消耗' },
+    { key: 'dohf', label: 'DOHF(天)' },
+    { key: 'safetyStock', label: '安全库存' },
+    { key: 'leadTimeDays', label: '提前期(天)' },
+    { key: 'lastOutboundDate', label: '最后出库' },
+    { key: 'idleDays', label: '闲置天数' },
     { key: 'ruleEvaluation', label: '评级' }
   ], reportData.value, `库存报表_${new Date().toISOString().substring(0, 10)}`)
   ElMessage.success('导出成功')
