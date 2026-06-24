@@ -60,3 +60,11 @@ export function scanInbound(data) {
 export function getInventoryTrace(params) {
   return request.get('/inbound/trace', { params })
 }
+
+/**
+ * 入库流水查询：按入库单号/物料号筛选二维码记录。
+ * @param {Object} params { page, size, orderNo?, materialCode? }
+ */
+export function getInboundFlow(params) {
+  return request.get('/inbound/flow', { params })
+}

@@ -17,7 +17,7 @@
               clearable size="small" style="width: 240px" @input="loadMaterials" />
             <el-button size="small" @click="exportMaterials">导出 CSV</el-button>
           </div>
-          <el-table :data="materialList" stripe size="small" v-loading="materialLoading">
+          <el-table :data="materialList" stripe size="small" v-loading="materialLoading" empty-text="暂无物料数据">
             <el-table-column prop="materialCode" label="物料号" width="140" />
             <el-table-column prop="materialName" label="物料名称" min-width="160" />
             <el-table-column prop="supplierCode" label="默认供应商" width="160" />
@@ -47,7 +47,7 @@
               clearable size="small" style="width: 240px" @input="loadAppliances" />
             <el-button size="small" @click="exportAppliances">导出 CSV</el-button>
           </div>
-          <el-table :data="applianceList" stripe size="small" v-loading="applianceLoading">
+          <el-table :data="applianceList" stripe size="small" v-loading="applianceLoading" empty-text="暂无器具配置">
             <el-table-column prop="materialCode" label="物料号" width="140" />
             <el-table-column prop="supplierCode" label="供应商编码" width="160" />
             <el-table-column prop="packType" label="包装器具型号" min-width="150" />
@@ -79,7 +79,7 @@
               clearable size="small" style="width: 240px" @input="loadSuppliers" />
             <el-button size="small" @click="exportSuppliers">导出 CSV</el-button>
           </div>
-          <el-table :data="supplierList" stripe size="small" v-loading="supplierLoading">
+          <el-table :data="supplierList" stripe size="small" v-loading="supplierLoading" empty-text="暂无供应商数据">
             <el-table-column prop="supplierCode" label="供应商编码" width="160" />
             <el-table-column prop="supplierName" label="供应商名称" min-width="180" />
             <el-table-column prop="contactName" label="联系人" width="100" />

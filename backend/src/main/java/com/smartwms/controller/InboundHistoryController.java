@@ -10,8 +10,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartwms.common.Result;
 import com.smartwms.dto.InboundOrderVO;
+import com.smartwms.entity.Barcode;
 import com.smartwms.entity.InboundDetail;
 import com.smartwms.entity.InboundOrder;
+import com.smartwms.mapper.BarcodeMapper;
 import com.smartwms.mapper.InboundDetailMapper;
 import com.smartwms.mapper.InboundOrderMapper;
 import com.smartwms.service.InboundService;
@@ -30,13 +32,16 @@ public class InboundHistoryController {
 
     private final InboundOrderMapper inboundOrderMapper;
     private final InboundDetailMapper inboundDetailMapper;
+    private final BarcodeMapper barcodeMapper;
     private final InboundService inboundService;
 
     public InboundHistoryController(InboundOrderMapper inboundOrderMapper,
                                      InboundDetailMapper inboundDetailMapper,
+                                     BarcodeMapper barcodeMapper,
                                      InboundService inboundService) {
         this.inboundOrderMapper = inboundOrderMapper;
         this.inboundDetailMapper = inboundDetailMapper;
+        this.barcodeMapper = barcodeMapper;
         this.inboundService = inboundService;
     }
 
@@ -142,6 +147,52 @@ public class InboundHistoryController {
         result.put("records", orderPage.getRecords());
         result.put("total", orderPage.getTotal());
         result.put("summary", summary);
+        return Result.success(result);
+    }
+
+    /**
+     * 查询入库流水（按二维码维度），支持按入库单号和物料号筛选。
+     * GET /api/inbound/flow?page=1&size=10&orderNo=&materialCode=
+     *
+     * @return 分页的二维码记录，含关联入库单号
+     */
+    @GetMapping("/flow")
+    public Result<Map<String, Object>> flow(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(required = false) String materialCode) {
+
+        LambdaQueryWrapper<Barcode> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Barcode::getType, "inbound");
+
+        if (orderNo != null && !orderNo.isBlank()) {
+            // 通过入库单号找到对应 inbound_id
+            List<Long> inboundIds = inboundOrderMapper.selectList(
+                    new LambdaQueryWrapper<InboundOrder>()
+                            .like(InboundOrder::getOrderNo, orderNo.trim())
+            ).stream().map(InboundOrder::getId).toList();
+
+            if (inboundIds.isEmpty()) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("records", List.of());
+                result.put("total", 0L);
+                return Result.success(result);
+            }
+            wrapper.in(Barcode::getInboundId, inboundIds);
+        }
+
+        if (materialCode != null && !materialCode.isBlank()) {
+            wrapper.like(Barcode::getMaterialCode, materialCode.trim());
+        }
+
+        wrapper.orderByDesc(Barcode::getCreatedAt);
+
+        Page<Barcode> barcodePage = barcodeMapper.selectPage(new Page<>(page, size), wrapper);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("records", barcodePage.getRecords());
+        result.put("total", barcodePage.getTotal());
         return Result.success(result);
     }
 }

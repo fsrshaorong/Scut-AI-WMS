@@ -221,10 +221,12 @@ BEGIN
         DELETE FROM barcodes WHERE inbound_id = 0 OR type NOT IN ('inbound','outbound');
     END IF;
 
-    -- 全局二维码序号临时表
+    -- 全局二维码序号临时表 + 单号计数器
     DROP TEMPORARY TABLE IF EXISTS temp_box_seq;
     CREATE TEMPORARY TABLE temp_box_seq (seq INT);
     INSERT INTO temp_box_seq VALUES (0);
+    SET @inbound_seq = 0;
+    SET @outbound_seq = 0;
 
     OPEN mat_cursor;
 
@@ -280,8 +282,9 @@ BEGIN
         SET v_inb_date = v_span + 60;
         SET v_inbound_qty = v_boxes_1 * v_pack_cap;
         IF v_inbound_qty > 0 THEN
-            SET v_inb_order_no = CONCAT('RK', REPLACE(v_mat_code, '_', ''), '_',
-                                        DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%m%d'), '_1');
+            SET @inbound_seq = @inbound_seq + 1;
+        SET v_inb_order_no = CONCAT('RK', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%Y%m%d'),
+                                    LPAD(@inbound_seq, 4, '0'));
             INSERT IGNORE INTO inbound_orders (order_no, status, supplier_code, created_at)
             VALUES (v_inb_order_no, '已完成', v_supplier, DATE_SUB(NOW(), INTERVAL v_inb_date DAY));
             SELECT id INTO v_inb_order_id FROM inbound_orders WHERE order_no = v_inb_order_no;
@@ -294,8 +297,9 @@ BEGIN
         SET v_inb_date = ROUND((v_span + 60) * 0.55);
         SET v_inbound_qty = v_boxes_2 * v_pack_cap;
         IF v_inbound_qty > 0 THEN
-            SET v_inb_order_no = CONCAT('RK', REPLACE(v_mat_code, '_', ''), '_',
-                                        DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%m%d'), '_2');
+            SET @inbound_seq = @inbound_seq + 1;
+            SET v_inb_order_no = CONCAT('RK', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%Y%m%d'),
+                                        LPAD(@inbound_seq, 4, '0'));
             INSERT IGNORE INTO inbound_orders (order_no, status, supplier_code, created_at)
             VALUES (v_inb_order_no, '已完成', v_supplier, DATE_SUB(NOW(), INTERVAL v_inb_date DAY));
             SELECT id INTO v_inb_order_id FROM inbound_orders WHERE order_no = v_inb_order_no;
@@ -308,8 +312,9 @@ BEGIN
         SET v_inb_date = ROUND((v_span + 60) * 0.15);
         SET v_inbound_qty = v_boxes_3 * v_pack_cap;
         IF v_inbound_qty > 0 THEN
-            SET v_inb_order_no = CONCAT('RK', REPLACE(v_mat_code, '_', ''), '_',
-                                        DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%m%d'), '_3');
+            SET @inbound_seq = @inbound_seq + 1;
+            SET v_inb_order_no = CONCAT('RK', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_inb_date DAY), '%Y%m%d'),
+                                        LPAD(@inbound_seq, 4, '0'));
             INSERT IGNORE INTO inbound_orders (order_no, status, supplier_code, created_at)
             VALUES (v_inb_order_no, '已完成', v_supplier, DATE_SUB(NOW(), INTERVAL v_inb_date DAY));
             SELECT id INTO v_inb_order_id FROM inbound_orders WHERE order_no = v_inb_order_no;
@@ -325,9 +330,9 @@ BEGIN
         SET v_seq = 0;
         WHILE v_cursor >= v_stop DO
             SET v_seq = v_seq + 1;
-            SET v_out_order_no = CONCAT('CK', REPLACE(v_mat_code, '_', ''),
-                                         '_', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_cursor DAY), '%m%d'),
-                                         '_', LPAD(v_seq, 4, '0'));
+            SET @outbound_seq = @outbound_seq + 1;
+            SET v_out_order_no = CONCAT('CK', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL v_cursor DAY), '%Y%m%d'),
+                                        LPAD(@outbound_seq, 5, '0'));
 
             -- 创建出库单
             INSERT IGNORE INTO outbound_orders (order_no, status, created_at)
@@ -409,14 +414,28 @@ DROP PROCEDURE IF EXISTS seed_warehouse_flow;
 DROP PROCEDURE IF EXISTS gen_barcodes;
 
 
--- ==================== 7. 补充：未入库单据（展示"待入库"状态） ====================
+-- ==================== 7. 补充：未入库单据（含"待入库"二维码，展示完整看板） ====================
 
+SET @inbound_seq = @inbound_seq + 1;
 INSERT IGNORE INTO inbound_orders (order_no, status, supplier_code, created_at) VALUES
-('RK20260624S999', '未入库', 'SUP_BOSCH_01', DATE_SUB(NOW(), INTERVAL 1 HOUR));
+(CONCAT('RK', DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 1 HOUR), '%Y%m%d'), LPAD(@inbound_seq, 4, '0')),
+ '未入库', 'SUP_BOSCH_01', DATE_SUB(NOW(), INTERVAL 1 HOUR));
+
+SET @pending_order_no = (SELECT order_no FROM inbound_orders WHERE status = '未入库' ORDER BY id DESC LIMIT 1);
+SET @pending_order_id = (SELECT id FROM inbound_orders WHERE order_no = @pending_order_no);
 
 INSERT IGNORE INTO inbound_details (inbound_id, order_no, material_code, pack_capacity, plan_qty, actual_qty)
-SELECT o.id, o.order_no, 'M_PART_003', 50, 150, 0
-FROM inbound_orders o WHERE o.order_no = 'RK20260624S999';
+VALUES (@pending_order_id, @pending_order_no, 'M_PART_003', 50, 150, 0);
+
+-- 为未入库单生成"待入库"二维码（3箱，可展示在入库看板上）
+INSERT IGNORE INTO barcodes (material_code, supplier_code, barcode, inbound_id, type, status, remaining_qty, created_at)
+VALUES
+('M_PART_003', 'SUP_BOSCH_01', CONCAT('WMS|M_PART_003|SUP_BOSCH_01|150|50|50|', LPAD(@inbound_seq, 4, '0'), '-1'),
+ @pending_order_id, 'inbound', '待入库', 50, NOW()),
+('M_PART_003', 'SUP_BOSCH_01', CONCAT('WMS|M_PART_003|SUP_BOSCH_01|150|50|50|', LPAD(@inbound_seq, 4, '0'), '-2'),
+ @pending_order_id, 'inbound', '待入库', 50, NOW()),
+('M_PART_003', 'SUP_BOSCH_01', CONCAT('WMS|M_PART_003|SUP_BOSCH_01|150|50|50|', LPAD(@inbound_seq, 4, '0'), '-3'),
+ @pending_order_id, 'inbound', '待入库', 50, NOW());
 
 
 -- ==================== 9. AI 分析报告 ====================

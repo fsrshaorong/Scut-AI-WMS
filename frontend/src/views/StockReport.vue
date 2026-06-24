@@ -32,7 +32,7 @@
       </div>
 
       <el-table :data="reportData" stripe size="small" v-loading="loading"
-        style="width: 100%">
+        empty-text="暂无库存报表数据" style="width: 100%">
         <el-table-column prop="materialCode" label="物料号" width="130" />
         <el-table-column prop="materialName" label="物料名称" min-width="120" />
         <el-table-column prop="stockQty" label="当前库存" width="80" align="right" />

@@ -71,8 +71,8 @@ async function handleLogin() {
     userStore.setLogin(form.username, data.token)
     ElMessage.success('登录成功，欢迎回来')
     router.push(getHomeRoute())
-  } catch {
-    ElMessage.error('用户名或密码错误')
+  } catch (err) {
+    ElMessage.error(err?.message || '登录失败，请稍后重试')
   } finally {
     loading.value = false
   }

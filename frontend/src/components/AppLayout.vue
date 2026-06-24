@@ -21,6 +21,7 @@
 
       <el-menu
         :default-active="activeMenu"
+        :default-openeds="['base', 'ops', 'data']"
         :collapse="isCollapse"
         router
         background-color="transparent"

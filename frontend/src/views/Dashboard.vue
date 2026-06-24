@@ -41,7 +41,7 @@
         <el-input v-model="searchKeyword" placeholder="搜索物料" clearable size="small"
           style="width: 220px" />
       </div>
-      <el-table :data="pagedStockData" stripe size="small">
+      <el-table :data="pagedStockData" stripe size="small" v-loading="stockLoading" empty-text="暂无库存数据">
         <el-table-column prop="materialCode" label="物料号" width="130" />
         <el-table-column prop="materialName" label="物料名称" min-width="120" />
         <el-table-column prop="stockQty" label="当前库存" width="80" align="right" />
@@ -91,6 +91,7 @@ import ChartCard from '@/components/ChartCard.vue'
 const stats = reactive({ totalSku: 0, deadStockCount: 0, highRiskCount: 0 })
 const lastUpdateTime = ref('—')
 const stockData = ref([])
+const stockLoading = ref(false)
 const searchKeyword = ref('')
 const filteredData = computed(() => {
   if (!searchKeyword.value) return stockData.value
@@ -167,6 +168,7 @@ onUnmounted(() => {
 })
 
 async function loadData() {
+  stockLoading.value = true
   try {
     const data = await getStockReport({})
     stockData.value = data || []
@@ -174,10 +176,12 @@ async function loadData() {
     stats.deadStockCount = stockData.value.filter(r => r.ruleEvaluation === 'DEAD_STOCK').length
     stats.highRiskCount = stockData.value.filter(r => r.ruleEvaluation === 'LOW_STOCK').length
     lastUpdateTime.value = new Date().toLocaleTimeString('zh-CN')
-
-    // 加载最近动态
     await loadRecentActivity()
-  } catch { /* */ }
+  } catch {
+    ElMessage.error('加载库存数据失败，请检查网络连接')
+  } finally {
+    stockLoading.value = false
+  }
 }
 
 // ==================== 最近动态 ====================

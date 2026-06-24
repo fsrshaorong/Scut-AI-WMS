@@ -19,6 +19,7 @@
               <el-icon :size="14"><Plus /></el-icon>
               <span>新建入库单</span>
             </el-button>
+            <el-button size="small" @click="openInboundFlowDialog">入库流水</el-button>
             <el-button size="small" :loading="inboundLoading" @click="loadOrders">刷新</el-button>
           </div>
           <el-table :data="inboundList" stripe size="small" v-loading="inboundLoading"
@@ -329,6 +330,23 @@
                 :created-at="bc.createdAt" />
             </div>
           </div>
+        </div>
+        <!-- 入库流水 -->
+        <div v-if="detailData && detailData.barcodes && detailData.barcodes.length > 0"
+          style="margin-top: 16px">
+          <div class="barcode-gallery-title">入库流水（共 {{ detailData.barcodes.length }} 条）</div>
+          <el-table :data="detailData.barcodes" stripe size="small">
+            <el-table-column prop="barcode" label="看板号" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" width="90" align="center">
+              <template #default="{ row }">
+                <span class="badge" :class="row.status === '在库' ? 'badge-success' : row.status === '已出库' ? 'badge-default' : 'badge-warn'">
+                  {{ row.status }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="remainingQty" label="剩余数量" width="90" align="right" />
+            <el-table-column prop="createdAt" label="生成时间" width="170" show-overflow-tooltip />
+          </el-table>
         </div>
         <div v-else class="empty-hint" style="padding: 30px 0">加载中...</div>
         <template #footer>
@@ -844,6 +862,42 @@
         </template>
     </el-drawer>
 
+    <!-- 入库流水查询对话框 -->
+    <Teleport to="body">
+      <el-dialog v-model="inboundFlowVisible" title="入库流水查询"
+        width="min(900px, calc(100vw - 32px))" destroy-on-close>
+        <div class="toolbar" style="margin-bottom: 12px">
+          <el-input v-model="inboundFlowQuery.orderNo" placeholder="入库单号（模糊）" clearable
+            size="small" style="width: 180px" @keyup.enter="loadInboundFlow" />
+          <el-input v-model="inboundFlowQuery.materialCode" placeholder="物料号" clearable
+            size="small" style="width: 140px" @keyup.enter="loadInboundFlow" />
+          <el-button type="primary" size="small" @click="loadInboundFlow">查询</el-button>
+        </div>
+        <el-table :data="inboundFlowList" stripe size="small" v-loading="inboundFlowLoading"
+          empty-text="暂无入库流水记录">
+          <el-table-column label="入库单号" width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ getInboundOrderNo(row.inboundId) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="materialCode" label="物料号" width="130" />
+          <el-table-column prop="barcode" label="看板号" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="status" label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <span class="badge" :class="row.status === '在库' ? 'badge-success' : row.status === '已出库' ? 'badge-default' : 'badge-warn'">
+                {{ row.status }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="remainingQty" label="剩余数量" width="90" align="right" />
+          <el-table-column prop="createdAt" label="生成时间" width="170" show-overflow-tooltip />
+        </el-table>
+        <template #footer>
+          <el-button @click="inboundFlowVisible = false">关闭</el-button>
+        </template>
+      </el-dialog>
+    </Teleport>
+
     <!-- 出库流水查询对话框 (Teleport to body) -->
     <Teleport to="body">
       <el-dialog v-model="historyVisible" title="出库批次流水查询"
@@ -880,7 +934,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Printer, Download } from '@element-plus/icons-vue'
-import { getInboundOrders, createInbound, updateInbound, confirmInbound, getInboundDetail } from '@/api/inbound'
+import { getInboundOrders, createInbound, updateInbound, confirmInbound, getInboundDetail, getInboundFlow } from '@/api/inbound'
 import { getOutboundOrders, createOutbound, updateOutbound, deleteOutbound, confirmOutbound, getOutboundDetail, getOutboundHistories } from '@/api/outbound'
 import { getSuppliers } from '@/api/suppliers'
 import { getMaterials } from '@/api/materials'
@@ -1807,6 +1861,50 @@ async function openOutDetailDialog(row) {
   } catch {
     outDetailVisible.value = false
   }
+}
+
+// ==================== 入库流水查询 ====================
+const inboundFlowVisible = ref(false)
+const inboundFlowLoading = ref(false)
+const inboundFlowList = ref([])
+const inboundFlowQuery = reactive({ orderNo: '', materialCode: '' })
+// 缓存 inboundId → orderNo 映射
+const inboundOrderNoMap = ref({})
+
+function openInboundFlowDialog() {
+  inboundFlowQuery.orderNo = ''
+  inboundFlowQuery.materialCode = ''
+  inboundFlowList.value = []
+  inboundFlowVisible.value = true
+}
+
+async function loadInboundFlow() {
+  inboundFlowLoading.value = true
+  try {
+    const params = { page: 1, size: 200 }
+    if (inboundFlowQuery.orderNo.trim()) params.orderNo = inboundFlowQuery.orderNo.trim()
+    if (inboundFlowQuery.materialCode.trim()) params.materialCode = inboundFlowQuery.materialCode.trim()
+    const data = await getInboundFlow(params)
+    inboundFlowList.value = data.records || []
+    // 构建 inboundId → 单号缓存
+    const ids = [...new Set(inboundFlowList.value.map(r => r.inboundId).filter(Boolean))]
+    for (const id of ids) {
+      if (!inboundOrderNoMap.value[id]) {
+        try {
+          const detail = await getInboundDetail(id)
+          inboundOrderNoMap.value[id] = detail.orderNo
+        } catch { inboundOrderNoMap.value[id] = '—' }
+      }
+    }
+  } catch {
+    inboundFlowList.value = []
+  } finally {
+    inboundFlowLoading.value = false
+  }
+}
+
+function getInboundOrderNo(inboundId) {
+  return inboundOrderNoMap.value[inboundId] || '加载中...'
 }
 
 // ==================== 出库流水查询 ====================
