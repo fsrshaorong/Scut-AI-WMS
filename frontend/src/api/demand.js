@@ -9,3 +9,8 @@ import request from './request'
 export function getDemandForecasts() {
   return request.get('/demand/forecasts')
 }
+
+/** 批量生成全部物料需求预测 */
+export function generateAllDemandForecasts() {
+  return request.post('/demand/forecasts/generate-all')
+}

@@ -28,4 +28,15 @@ public class DemandForecastController {
     public Result<DemandForecast> regenerate(@PathVariable String materialCode) {
         return Result.success(service.generate(materialCode));
     }
+
+    /**
+     * 批量生成全部物料的需求预测。
+     *
+     * @author Focus
+     * @date 2026-06-25
+     */
+    @PostMapping("/forecasts/generate-all")
+    public Result<Integer> generateAll() {
+        return Result.success(service.generateAll());
+    }
 }

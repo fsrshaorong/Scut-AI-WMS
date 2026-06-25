@@ -126,6 +126,28 @@ public class DemandForecastService {
         return forecastMapper.selectList(null);
     }
 
+    /**
+     * 为所有物料批量生成需求预测。
+     *
+     * @author Focus
+     * @date 2026-06-25
+     * @return 成功生成的预测记录数
+     */
+    public int generateAll() {
+        List<Material> materials = materialMapper.selectList(null);
+        int count = 0;
+        for (Material m : materials) {
+            try {
+                generate(m.getMaterialCode());
+                count++;
+            } catch (Exception e) {
+                log.warn("物料 {} 需求预测生成失败: {}", m.getMaterialCode(), e.getMessage());
+            }
+        }
+        log.info("批量需求预测完成: {}/{} 个物料成功", count, materials.size());
+        return count;
+    }
+
     // ===== 数据聚合 =====
     private int[] aggregateOutWeekly(String code) {
         int[] w = new int[HISTORY_WEEKS];

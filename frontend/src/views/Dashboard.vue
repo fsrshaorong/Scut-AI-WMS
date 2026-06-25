@@ -39,6 +39,9 @@
       <div class="block-header">
         <span class="block-title">需求趋势分析</span>
         <span v-if="demandLoading" style="font-size:12px;color:var(--text-secondary)">加载中...</span>
+        <el-button text size="small" :loading="demandRegenerating" @click="refreshDemand" style="margin-left:12px">
+          {{ demandRegenerating ? '生成中...' : '刷新预测' }}
+        </el-button>
       </div>
       <div v-if="anomalyItems.length" class="anomaly-alert">
         <el-icon :size="16"><WarningFilled /></el-icon>
@@ -74,7 +77,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { getStockReport } from '@/api/stock'
-import { getDemandForecasts } from '@/api/demand'
+import { getDemandForecasts, generateAllDemandForecasts } from '@/api/demand'
 import { getInboundOrders } from '@/api/inbound'
 import { getOutboundOrders } from '@/api/outbound'
 import { ElMessage, ElNotification } from 'element-plus'
@@ -87,6 +90,7 @@ const stockData = ref([])
 const stockLoading = ref(false)
 const demandData = ref([])
 const demandLoading = ref(false)
+const demandRegenerating = ref(false)
 const searchKeyword = ref('')
 const filteredData = computed(() => {
   if (!searchKeyword.value) return stockData.value
@@ -274,6 +278,23 @@ async function loadDemand() {
     demandData.value = await getDemandForecasts() || []
   } catch { /* */ }
   finally { demandLoading.value = false }
+}
+
+/**
+ * 批量重新生成全部物料需求预测并刷新显示。
+ */
+async function refreshDemand() {
+  demandRegenerating.value = true
+  try {
+    const count = await generateAllDemandForecasts()
+    ElMessage.success(`需求预测刷新完成，共生成 ${count} 条记录`)
+    // 重新加载数据以展示最新预测
+    await loadDemand()
+  } catch {
+    ElMessage.error('需求预测刷新失败，请检查后端服务')
+  } finally {
+    demandRegenerating.value = false
+  }
 }
 
 // 监听数据变化，延迟渲染图表（确保 v-for DOM 已挂载）

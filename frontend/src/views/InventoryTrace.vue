@@ -29,8 +29,9 @@
       <div v-if="traceData.length" class="stat-row" style="margin-bottom: 16px">
         <div class="stat-item"><span class="stat-num warn">{{ statusStats['待入库'] }}</span><span class="stat-lbl">待入库</span></div>
         <div class="stat-item"><span class="stat-num success">{{ statusStats['在库'] }}</span><span class="stat-lbl">在库</span></div>
+        <div class="stat-item"><span class="stat-num info">{{ statusStats['待出库'] }}</span><span class="stat-lbl">待出库</span></div>
         <div class="stat-item"><span class="stat-num default">{{ statusStats['已出库'] }}</span><span class="stat-lbl">已出库</span></div>
-        <div class="stat-item"><span class="stat-num danger">{{ statusStats['其他'] }}</span><span class="stat-lbl">异常</span></div>
+        <div class="stat-item"><span class="stat-num danger">{{ statusStats['封存'] }}</span><span class="stat-lbl">封存</span></div>
         <div class="stat-spacer"></div>
         <div>
           <el-button size="small" :disabled="!selectedRows.length" @click="batchPrint">批量打印 ({{ selectedRows.length }})</el-button>
@@ -109,12 +110,15 @@ const query = reactive({
 
 // 状态统计
 const statusStats = computed(() => {
-  const s = { '待入库': 0, '在库': 0, '已出库': 0, '其他': 0 }
+  const s = { '待入库': 0, '在库': 0, '待出库': 0, '已出库': 0, '封存': 0 }
   traceData.value.forEach(r => {
-    if (r.status === '待入库') s['待入库']++
-    else if (r.status === '在库') s['在库']++
-    else if (r.status === '已出库') s['已出库']++
-    else s['其他']++
+    const st = r.status || ''
+    if (st === '待入库') s['待入库']++
+    else if (st === '在库') s['在库']++
+    else if (st === '待出库') s['待出库']++
+    else if (st === '已出库') s['已出库']++
+    else if (st === 'FROZEN' || st === '封存') s['封存']++
+    else s['封存']++ // 未识别的状态也归入封存/异常
   })
   return s
 })
@@ -162,6 +166,8 @@ async function doQuery() {
 function statusBadgeClass(status) {
   if (status === '在库') return 'badge-success'
   if (status === '已出库') return 'badge-default'
+  if (status === '待出库') return 'badge-info'
+  if (status === 'FROZEN' || status === '封存') return 'badge-danger'
   return 'badge-warn'
 }
 
@@ -201,6 +207,7 @@ function doExport() {
 .stat-num.warn { color: #e6a23c; }
 .stat-num.danger { color: #f56c6c; }
 .stat-num.default { color: #909399; }
+.stat-num.info { color: #409eff; }
 .stat-lbl { font-size: 12px; color: var(--text-secondary); }
 .stat-spacer { flex: 1; }
 .toolbar-tip {
@@ -217,6 +224,8 @@ function doExport() {
 }
 .badge-success { background: #f0f9eb; color: #67c23a; }
 .badge-warn    { background: #fdf6ec; color: #e6a23c; }
+.badge-info    { background: #ecf5ff; color: #409eff; }
+.badge-danger  { background: #fef0f0; color: #f56c6c; }
 .badge-default { background: #f4f4f5; color: #909399; }
 .trace-barcode-cell {
   display: flex;
