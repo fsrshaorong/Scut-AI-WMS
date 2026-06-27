@@ -49,7 +49,8 @@
       </div>
       <div class="demand-grid">
         <div v-for="(d, idx) in demandData" :key="d.materialCode" class="demand-card"
-          :class="{ 'card-anomaly': d.anomalyFlag }">
+          :class="{ 'card-anomaly': d.anomalyFlag }"
+          @click="openForecastDetail(d)">
           <div class="card-header">
             <span class="card-code">{{ d.materialCode }}</span>
             <span class="card-trend" :class="'trend-' + d.trend">
@@ -67,6 +68,90 @@
       </div>
       <div v-if="!demandLoading && demandData.length === 0" class="empty-hint">暂无需求预测数据</div>
     </div>
+
+    <!-- 预测详情弹窗 -->
+    <Teleport to="body">
+      <el-dialog v-model="forecastVisible" :title="'需求预测详情 — ' + (forecastDetail?.materialCode || '')"
+        width="min(960px, calc(100vw - 32px))" destroy-on-close
+        @opened="renderDetailChart">
+        <div v-if="forecastDetail" class="forecast-detail">
+          <!-- 概览行 -->
+          <div class="fd-overview">
+            <div class="fd-tags">
+              <el-tag :type="forecastDetail.trend === 'UP' ? 'danger' : forecastDetail.trend === 'DOWN' ? 'success' : 'info'" size="small">
+                {{ forecastDetail.trend === 'UP' ? '↑ 上升趋势' : forecastDetail.trend === 'DOWN' ? '↓ 下降趋势' : '→ 趋势平稳' }}
+              </el-tag>
+              <el-tag :type="volTagType(forecastDetail.volatility)" size="small">
+                {{ volLabel(forecastDetail.volatility) }}波动
+              </el-tag>
+              <el-tag v-if="forecastDetail.anomalyFlag" type="danger" size="small" effect="dark">异常</el-tag>
+              <el-tag type="info" size="small">{{ forecastDetail.model || '未知模型' }}</el-tag>
+            </div>
+            <span class="fd-time">生成时间：{{ forecastDetail.generatedAt || '—' }}</span>
+          </div>
+
+          <!-- 大尺寸图表 -->
+          <div id="forecast-detail-chart" class="fd-chart"></div>
+
+          <!-- 周数据明细表 -->
+          <div class="fd-section-title">周数据明细</div>
+          <el-table :data="buildWeekTable(forecastDetail)" size="small" stripe border
+            :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 600 }">
+            <el-table-column prop="label" label="周期" width="80" align="center" />
+            <el-table-column prop="outQty" label="出库量（件）" align="center">
+              <template #default="{ row }">
+                <span :class="{ 'pred-val': row.isPred }">{{ row.outQty }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="inQty" label="入库量（件）" align="center">
+              <template #default="{ row }">
+                <span :class="{ 'pred-val': row.isPred }">{{ row.inQty }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.isPred" type="warning" size="small" effect="plain">预测值</el-tag>
+                <el-tag v-else type="info" size="small" effect="plain">历史值</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 统计指标 -->
+          <div class="fd-section-title">统计指标</div>
+          <div class="fd-stats">
+            <div class="fd-stat-item">
+              <span class="fd-stat-val">{{ weeklyAvg(forecastDetail.weeklyHistory) }}</span>
+              <span class="fd-stat-label">12周平均出库（件/周）</span>
+            </div>
+            <div class="fd-stat-item">
+              <span class="fd-stat-val">{{ weeklyTotal(forecastDetail.weeklyHistory) }}</span>
+              <span class="fd-stat-label">12周总出库（件）</span>
+            </div>
+            <div class="fd-stat-item">
+              <span class="fd-stat-val">{{ maxDemandVal }}</span>
+              <span class="fd-stat-label">全局峰值（件/周）</span>
+            </div>
+            <div class="fd-stat-item">
+              <span class="fd-stat-val">{{ forecastDetail.week1 + forecastDetail.week2 + forecastDetail.week3 + forecastDetail.week4 }}</span>
+              <span class="fd-stat-label">未来4周预测合计（件）</span>
+            </div>
+          </div>
+
+          <!-- AI 分析 -->
+          <div class="fd-section-title">AI 分析建议</div>
+          <div class="fd-analysis">
+            <el-icon :size="16" style="color:var(--wms-primary);flex-shrink:0"><WarningFilled /></el-icon>
+            <span>{{ forecastDetail.analysis || '暂无分析数据' }}</span>
+          </div>
+        </div>
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button :loading="detailRegenerating" @click="regenerateDetail">重新生成预测</el-button>
+            <el-button @click="forecastVisible = false">关闭</el-button>
+          </div>
+        </template>
+      </el-dialog>
+    </Teleport>
   </div>
 </template>
 
@@ -91,6 +176,11 @@ const stockLoading = ref(false)
 const demandData = ref([])
 const demandLoading = ref(false)
 const demandRegenerating = ref(false)
+// 预测详情弹窗
+const forecastVisible = ref(false)
+const forecastDetail = ref(null)
+const detailRegenerating = ref(false)
+let detailChartInstance = null
 const searchKeyword = ref('')
 const filteredData = computed(() => {
   if (!searchKeyword.value) return stockData.value
@@ -382,6 +472,113 @@ function renderDemandCharts() {
     chartInstances[id] = chart
   })
 }
+
+// ==================== 预测详情弹窗 ====================
+
+/** 打开预测详情弹窗 */
+function openForecastDetail(d) {
+  forecastDetail.value = d
+  forecastVisible.value = true
+}
+
+/** 渲染弹窗内大尺寸图表（含历史/预测分隔线） */
+function renderDetailChart() {
+  nextTick(() => {
+    const d = forecastDetail.value
+    if (!d) return
+    const el = document.getElementById('forecast-detail-chart')
+    if (!el) return
+    if (detailChartInstance) { detailChartInstance.dispose(); detailChartInstance = null }
+
+    const outHist = parseHistory(d.weeklyHistory)
+    const inHist = parseHistory(d.inboundHistory)
+    if (outHist.length === 0) return
+
+    const outFull = [...outHist, d.week1, d.week2, d.week3, d.week4]
+    const inFull = inHist.length > 0
+      ? [...inHist, d.inWeek1, d.inWeek2, d.inWeek3, d.inWeek4]
+      : outFull.map(v => Math.round(v * 0.8))
+    const labels = outHist.map((_, i) => 'W' + (i + 1))
+    const allLabels = [...labels, 'W13预', 'W14预', 'W15预', 'W16预']
+
+    const chart = echarts.init(el)
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { bottom: 0, data: ['出库', '入库'], textStyle: { fontSize: 11 } },
+      grid: { left: 50, right: 24, top: 20, bottom: 44 },
+      xAxis: {
+        type: 'category', data: allLabels, axisLabel: { fontSize: 10 },
+        boundaryGap: false,
+        // 标记预测区域背景
+        axisLine: { onZero: false },
+      },
+      yAxis: { type: 'value', axisLabel: { fontSize: 10 }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } },
+      series: [
+        {
+          name: '出库', type: 'line', data: outFull, smooth: true, symbol: 'circle', symbolSize: 4,
+          lineStyle: { width: 2.5, color: '#409eff' },
+          areaStyle: { color: 'rgba(64,158,255,0.08)' },
+          markLine: {
+            silent: true, symbol: 'none',
+            lineStyle: { type: 'dashed', color: '#e6a23c', width: 1.5 },
+            data: [{ xAxis: labels[labels.length - 1], label: { formatter: '← 历史 | 预测 →', fontSize: 10, color: '#e6a23c' } }]
+          }
+        },
+        {
+          name: '入库', type: 'line', data: inFull, smooth: true, symbol: 'circle', symbolSize: 4,
+          lineStyle: { width: 2.5, color: '#67c23a' },
+          areaStyle: { color: 'rgba(103,194,58,0.08)' }
+        }
+      ]
+    })
+    detailChartInstance = chart
+  })
+}
+
+/** 构建周数据明细表 */
+function buildWeekTable(d) {
+  const outHist = parseHistory(d.weeklyHistory)
+  const inHist = parseHistory(d.inboundHistory)
+  const rows = []
+  for (let i = 0; i < outHist.length; i++) {
+    rows.push({ label: `W${i + 1}`, outQty: outHist[i], inQty: (inHist[i] || 0), isPred: false })
+  }
+  rows.push(
+    { label: 'W13预', outQty: d.week1 || 0, inQty: d.inWeek1 || 0, isPred: true },
+    { label: 'W14预', outQty: d.week2 || 0, inQty: d.inWeek2 || 0, isPred: true },
+    { label: 'W15预', outQty: d.week3 || 0, inQty: d.inWeek3 || 0, isPred: true },
+    { label: 'W16预', outQty: d.week4 || 0, inQty: d.inWeek4 || 0, isPred: true }
+  )
+  return rows
+}
+
+/** 波动 → el-tag type 映射 */
+function volTagType(v) {
+  return { 'HIGH': 'danger', 'MEDIUM': 'warning', 'LOW': 'success' }[v] || 'info'
+}
+
+/** 单独重新生成当前物料的预测 */
+async function regenerateDetail() {
+  if (!forecastDetail.value) return
+  detailRegenerating.value = true
+  try {
+    await regenerateDemandForecast(forecastDetail.value.materialCode)
+    // 重新加载以获取最新数据
+    const raw = await getDemandForecasts() || []
+    demandData.value = raw.filter(d => isValidMaterialCode(d.materialCode))
+    // 更新当前详情引用
+    const updated = demandData.value.find(d => d.materialCode === forecastDetail.value.materialCode)
+    if (updated) {
+      forecastDetail.value = updated
+      nextTick(() => renderDetailChart())
+    }
+    ElMessage.success(`${forecastDetail.value.materialCode} 预测已更新`)
+  } catch {
+    ElMessage.error('重新生成失败')
+  } finally {
+    detailRegenerating.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -532,6 +729,93 @@ function renderDemandCharts() {
 @media (max-width: 420px) {
   .stat-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ==================== 预测详情弹窗 ==================== */
+.forecast-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.fd-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f7f9fc;
+  border-radius: 4px;
+}
+.fd-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fd-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.fd-chart {
+  width: 100%;
+  height: 320px;
+}
+.fd-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+.fd-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.fd-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 10px;
+  background: #f0f5ff;
+  border-radius: 4px;
+  border: 1px solid #d9ecff;
+}
+.fd-stat-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--wms-primary);
+  line-height: 1.2;
+}
+.fd-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  text-align: center;
+}
+.fd-analysis {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #fafafa;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-regular);
+  line-height: 1.8;
+}
+.pred-val {
+  color: var(--wms-warning);
+  font-weight: 500;
+}
+
+@media (max-width: 760px) {
+  .fd-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .fd-overview {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 }
 </style>
