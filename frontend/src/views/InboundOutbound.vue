@@ -793,10 +793,8 @@ const detailData = ref(null)
 // ==================== 打印看板 ====================
 
 /**
- * 批量打印出入库单中的所有看板标签，直接调用浏览器打印。
- * 使用 qrcode 库在本地预生成二维码，打开新窗口即打。
- *
- * @param {Object} row 列表行数据 { id, orderNo }
+ * 批量打印出入库单中的所有看板标签，直接调起系统打印机。
+ * 使用隐藏 iframe + 预生成二维码，图片加载完成后自动触发打印。
  */
 async function printBarcodes(row) {
   try {
@@ -812,11 +810,10 @@ async function printBarcodes(row) {
     const typeLabel = activeTab.value === 'inbound' ? '入库' : '出库'
 
     // 预生成所有二维码 data URL
-    const qrPromises = barcodes.map(bc =>
+    const qrUrls = await Promise.all(barcodes.map(bc =>
       QRCodeLib.toDataURL(bc.barcode, { width: 120, margin: 1, errorCorrectionLevel: 'M' })
         .catch(() => '')
-    )
-    const qrUrls = await Promise.all(qrPromises)
+    ))
 
     // 构建卡片 HTML
     let cardsHtml = ''
@@ -829,43 +826,92 @@ async function printBarcodes(row) {
       const actualQty = bc.remainingQty != null ? bc.remainingQty : h(parts[5] || '—')
       const boxSeq = h(parts[6] || '—')
       const createdAt = bc.createdAt ? bc.createdAt.substring(0, 10) : '—'
-      cardsHtml += `
-        <div class="lc">
-          <div class="lq"><img src="${qrUrls[i]}" width="80" height="80" alt="QR"></div>
-          <div class="li">
-            <div class="lr"><span class="lk">物料</span><span class="lv">${materialCode}</span></div>
-            <div class="lr"><span class="lk">供应商</span><span class="lv">${supplierCode}</span></div>
-            <div class="lr"><span class="lk">箱容量</span><span class="lv">${packCapacity}件</span></div>
-            <div class="lr"><span class="lk">数量</span><span class="lv">${actualQty}件</span></div>
-            <div class="lr"><span class="lk">箱号</span><span class="lv">${boxSeq}</span></div>
-            <div class="lr"><span class="lk">日期</span><span class="lv">${createdAt}</span></div>
-          </div>
-        </div>`
+      cardsHtml += `<div class="lc">
+        <div class="lq"><img src="${qrUrls[i]}" width="80" height="80" onerror="this.style.display='none'"></div>
+        <div class="li">
+          <div class="lr"><span class="lk">物料</span><span class="lv">${materialCode}</span></div>
+          <div class="lr"><span class="lk">供应商</span><span class="lv">${supplierCode}</span></div>
+          <div class="lr"><span class="lk">箱容量</span><span class="lv">${packCapacity}件</span></div>
+          <div class="lr"><span class="lk">数量</span><span class="lv">${actualQty}件</span></div>
+          <div class="lr"><span class="lk">箱号</span><span class="lv">${boxSeq}</span></div>
+          <div class="lr"><span class="lk">日期</span><span class="lv">${createdAt}</span></div>
+        </div>
+      </div>`
     }
 
-    const printWin = window.open('', '_blank', 'width=800,height=600')
-    printWin.document.write(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>${typeLabel}看板_${orderNo}</title>
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${typeLabel}看板_${orderNo}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Microsoft YaHei',sans-serif;padding:8px}
-h4{text-align:center;font-size:12px;margin:0 0 6px}
+body{font-family:'Microsoft YaHei',sans-serif;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h4{text-align:center;font-size:13px;margin:0 0 8px}
 h4 span{font-size:10px;color:#888;font-weight:normal}
 .g{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.lc{display:flex;gap:6px;border:1.5px solid #333;padding:5px;border-radius:2px;page-break-inside:avoid}
-.lq{width:80px;height:80px;flex-shrink:0}
+.lc{display:flex;gap:6px;border:1.5px solid #333;padding:6px;border-radius:2px;page-break-inside:avoid}
+.lq{width:80px;height:80px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .lq img{width:80px;height:80px}
-.li{flex:1;font-size:8px;display:flex;flex-direction:column;justify-content:center;gap:0}
+.li{flex:1;font-size:8px;display:flex;flex-direction:column;justify-content:center;gap:1px}
 .lr{display:flex;justify-content:space-between}
 .lk{color:#888}.lv{font-weight:600;color:#111}
-@media print{body{padding:4mm}.lc{border-color:#000}}
-@page{size:A4;margin:6mm}
+@media print{body{padding:5mm}.lc{border-color:#000}@page{size:A4;margin:6mm}}
 </style></head><body>
 <h4>智库WMS — ${typeLabel}看板 <span>${orderNo} / ${barcodes.length}个</span></h4>
 <div class="g">${cardsHtml}</div>
-<script>setTimeout(()=>{window.print();window.close()},300)<\\/script>
-</body></html>`)
-    printWin.document.close()
+</body></html>`
+
+    // 使用隐藏 iframe 方式打印，避免弹窗被拦截且保证图片加载完成
+    const oldFrame = document.getElementById('print-frame')
+    if (oldFrame) oldFrame.remove()
+    const iframe = document.createElement('iframe')
+    iframe.id = 'print-frame'
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none'
+    document.body.appendChild(iframe)
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+    iframeDoc.open()
+    iframeDoc.write(html)
+    iframeDoc.close()
+
+    // 等待图片全部加载完毕后再打印
+    const images = iframeDoc.querySelectorAll('img')
+    let loadedCount = 0
+    const totalImages = images.length
+
+    function tryPrint() {
+      loadedCount++
+      if (loadedCount >= totalImages) {
+        setTimeout(() => {
+          iframe.contentWindow.focus()
+          iframe.contentWindow.print()
+          // 监听打印完成事件（部分浏览器支持）
+          iframe.contentWindow.onafterprint = () => {
+            setTimeout(() => {
+              if (document.getElementById('print-frame')) {
+                document.getElementById('print-frame').remove()
+              }
+            }, 500)
+          }
+          // 兜底：10秒后清理 iframe
+          setTimeout(() => {
+            if (document.getElementById('print-frame')) {
+              document.getElementById('print-frame').remove()
+            }
+          }, 10000)
+        }, 200)
+      }
+    }
+
+    if (totalImages === 0) {
+      tryPrint()
+    } else {
+      images.forEach(img => {
+        if (img.complete) {
+          tryPrint()
+        } else {
+          img.onload = tryPrint
+          img.onerror = tryPrint
+        }
+      })
+    }
   } catch (err) {
     ElMessage.error('加载看板数据失败')
   }
