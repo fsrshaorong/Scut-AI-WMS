@@ -24,20 +24,27 @@ public class OutboundOrderRequest {
     public void setDetails(List<OutboundDetailItem> details) { this.details = details; }
 
     /**
-     * 出库单明细项（整箱出库，不拆零）。
+     * 出库单明细项（支持按箱或按件出库，优先整箱、FIFO 拆零）。
+     * planQty 与 boxCount 二选一，planQty 优先级更高。
      */
     public static class OutboundDetailItem {
         @NotBlank(message = "物料号不能为空")
         private String materialCode;
 
-        @NotNull(message = "出库箱数不能为空")
         @Min(value = 1, message = "出库箱数必须大于 0")
         private Integer boxCount;
+
+        /** 计划出库总件数，优先级高于 boxCount。系统自动按 FIFO 整箱优先→拆零拣选 */
+        @Min(value = 1, message = "计划出库件数必须大于 0")
+        private Integer planQty;
 
         public String getMaterialCode() { return materialCode; }
         public void setMaterialCode(String materialCode) { this.materialCode = materialCode; }
 
         public Integer getBoxCount() { return boxCount; }
         public void setBoxCount(Integer boxCount) { this.boxCount = boxCount; }
+
+        public Integer getPlanQty() { return planQty; }
+        public void setPlanQty(Integer planQty) { this.planQty = planQty; }
     }
 }

@@ -31,20 +31,28 @@ public class InboundOrderRequest {
     public void setDetails(List<InboundDetailItem> details) { this.details = details; }
 
     /**
-     * 入库单明细项（整箱入库，单箱容量由器具配置决定）。
+     * 入库单明细项（支持按箱或按件入库，单箱容量由器具配置决定）。
+     * planQty 与 boxCount 二选一，planQty 优先级更高。
+     * 若提供 planQty，系统自动向上取整计算箱数，末箱允许零头。
      */
     public static class InboundDetailItem {
         @NotBlank(message = "物料号不能为空")
         private String materialCode;
 
-        @NotNull(message = "入库箱数不能为空")
         @Min(value = 1, message = "入库箱数必须大于 0")
         private Integer boxCount;
+
+        /** 计划入库总件数，优先级高于 boxCount。系统根据 packCapacity 自动计算箱数（向上取整） */
+        @Min(value = 1, message = "计划入库件数必须大于 0")
+        private Integer planQty;
 
         public String getMaterialCode() { return materialCode; }
         public void setMaterialCode(String materialCode) { this.materialCode = materialCode; }
 
         public Integer getBoxCount() { return boxCount; }
         public void setBoxCount(Integer boxCount) { this.boxCount = boxCount; }
+
+        public Integer getPlanQty() { return planQty; }
+        public void setPlanQty(Integer planQty) { this.planQty = planQty; }
     }
 }

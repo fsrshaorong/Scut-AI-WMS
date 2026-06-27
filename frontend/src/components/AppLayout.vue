@@ -35,6 +35,12 @@
           <span>仪表盘</span>
         </el-menu-item>
 
+        <!-- 出入库管理 — 高频操作，置顶为一级菜单 -->
+        <el-menu-item index="/inbound-outbound" @click="mobileMenuOpen = false">
+          <el-icon :size="18"><Switch /></el-icon>
+          <span>出入库管理</span>
+        </el-menu-item>
+
         <!-- ====== 基础数据 ====== -->
         <el-sub-menu index="base">
           <template #title>
@@ -50,7 +56,6 @@
             <el-icon :size="18"><Switch /></el-icon>
             <span>作业管理</span>
           </template>
-          <el-menu-item index="/inbound-outbound" @click="mobileMenuOpen = false">出入库管理</el-menu-item>
           <el-menu-item index="/scan" @click="mobileMenuOpen = false">扫码操作</el-menu-item>
           <el-menu-item index="/pda" @click="mobileMenuOpen = false">PDA 手持</el-menu-item>
           <el-menu-item index="/freeze" @click="mobileMenuOpen = false">封存管理</el-menu-item>

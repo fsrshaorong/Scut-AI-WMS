@@ -7,15 +7,13 @@
 
 /**
  * 检测当前是否为 PDA / 移动设备。
- * 综合 User-Agent 和屏幕宽度双重判定。
+ * 仅以 User-Agent 判定，不使用屏幕宽度（桌面端窄窗会误判）。
  *
  * @returns {boolean} true 表示 PDA/移动设备
  */
 export function isMobile() {
-  // 屏幕宽度 ≤ 768px 视为 PDA/移动端
-  if (window.innerWidth <= 768) return true
-
-  // User-Agent 检测
+  // 仅以 User-Agent 判定设备类型
+  // 屏幕宽度不作为判定条件，避免桌面端窄窗（开发者工具/小窗模式）误判为移动端
   const ua = navigator.userAgent || ''
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)
 }

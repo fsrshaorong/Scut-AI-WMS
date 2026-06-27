@@ -1,5 +1,5 @@
 /**
- * 入库单服务实现（整箱入库，单箱容量由器具配置决定）。
+ * 入库单服务实现（支持按箱或按件入库，末箱允许零头）。
  *
  * @author Focus
  * @date 2026-06-03
@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,19 +69,22 @@ public class InboundServiceImpl implements InboundService {
      * 优先按 物料+供应商 精确匹配，若未找到则按物料模糊匹配（支持多供应商物料）。
      */
     private int getPackCapacity(String materialCode, String supplierCode) {
-        // 优先精确匹配
-        Appliance appliance = applianceMapper.selectOne(
+        // 优先精确匹配（使用 selectList + LIMIT 1 避免重复数据导致 TooManyResultsException）
+        List<Appliance> appliances = applianceMapper.selectList(
                 new LambdaQueryWrapper<Appliance>()
                         .eq(Appliance::getMaterialCode, materialCode)
                         .eq(Appliance::getSupplierCode, supplierCode)
+                        .last("LIMIT 1")
         );
+        Appliance appliance = (appliances != null && !appliances.isEmpty()) ? appliances.get(0) : null;
         // 回退：按物料号匹配任意供应商
         if (appliance == null) {
-            appliance = applianceMapper.selectOne(
+            appliances = applianceMapper.selectList(
                     new LambdaQueryWrapper<Appliance>()
                             .eq(Appliance::getMaterialCode, materialCode)
-                            .last("limit 1")
+                            .last("LIMIT 1")
             );
+            appliance = (appliances != null && !appliances.isEmpty()) ? appliances.get(0) : null;
         }
         if (appliance == null || appliance.getPackCapacity() == null || appliance.getPackCapacity() <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -112,15 +116,24 @@ public class InboundServiceImpl implements InboundService {
 
         String supplierCode = request.getSupplierCode();
 
-        // 创建明细并生成二维码（整箱，每箱一个二维码）
+        // 创建明细并生成二维码（支持按件入库，末箱允许零头）
         for (InboundOrderRequest.InboundDetailItem item : request.getDetails()) {
             int packCapacity = getPackCapacity(item.getMaterialCode(), supplierCode);
-            int boxCount = item.getBoxCount() != null ? item.getBoxCount() : 0;
-            if (boxCount <= 0) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "物料 " + item.getMaterialCode() + " 的入库箱数必须大于 0");
+
+            // 确定计划总件数和箱数：planQty 优先，否则由 boxCount 推算
+            int planQty;
+            int boxCount;
+            if (item.getPlanQty() != null && item.getPlanQty() > 0) {
+                planQty = item.getPlanQty();
+                boxCount = (int) Math.ceil((double) planQty / packCapacity);
+            } else {
+                boxCount = item.getBoxCount() != null ? item.getBoxCount() : 0;
+                if (boxCount <= 0) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "物料 " + item.getMaterialCode() + " 的入库箱数或计划件数必须大于 0");
+                }
+                planQty = boxCount * packCapacity;
             }
-            int planQty = boxCount * packCapacity;
 
             InboundDetail detail = new InboundDetail();
             detail.setInboundId(order.getId());
@@ -131,10 +144,17 @@ public class InboundServiceImpl implements InboundService {
             detail.setActualQty(0);
             inboundDetailMapper.insert(detail);
 
-            // 每箱生成一条二维码
+            // 每箱生成一条二维码，前 N-1 箱为整箱，末箱可能为零头
             for (int i = 0; i < boxCount; i++) {
+                boolean isLastBox = (i == boxCount - 1);
+                // 末箱件数 = planQty - 前 N-1 箱的整箱总量，若为零则回退到整箱容量（恰好整除时）
+                int boxQty = isLastBox
+                        ? planQty - (boxCount - 1) * packCapacity
+                        : packCapacity;
+                if (boxQty <= 0) boxQty = packCapacity; // 整除时末箱也是整箱
+
                 String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode, planQty,
-                        packCapacity, planQty, i + 1, orderNo);
+                        packCapacity, boxQty, i + 1);
                 Barcode barcode = new Barcode();
                 barcode.setMaterialCode(item.getMaterialCode());
                 barcode.setSupplierCode(supplierCode);
@@ -142,7 +162,7 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
                 barcode.setType("inbound");
-                barcode.setRemainingQty(packCapacity);
+                barcode.setRemainingQty(boxQty);
                 barcodeMapper.insert(barcode);
                 // 逐箱错开 1 秒，确保 FIFO 排序可区分
                 Barcode updateTime = new Barcode();
@@ -285,16 +305,25 @@ public class InboundServiceImpl implements InboundService {
                         .eq(Barcode::getInboundId, id)
         );
 
-        // 重新创建明细和二维码（整箱逻辑）
+        // 重新创建明细和二维码（支持按件入库，末箱允许零头）
         String orderNo = order.getOrderNo();
         for (InboundOrderRequest.InboundDetailItem item : request.getDetails()) {
             int packCapacity = getPackCapacity(item.getMaterialCode(), supplierCode);
-            int boxCount = item.getBoxCount() != null ? item.getBoxCount() : 0;
-            if (boxCount <= 0) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "物料 " + item.getMaterialCode() + " 的入库箱数必须大于 0");
+
+            // 确定计划总件数和箱数：planQty 优先，否则由 boxCount 推算
+            int planQty;
+            int boxCount;
+            if (item.getPlanQty() != null && item.getPlanQty() > 0) {
+                planQty = item.getPlanQty();
+                boxCount = (int) Math.ceil((double) planQty / packCapacity);
+            } else {
+                boxCount = item.getBoxCount() != null ? item.getBoxCount() : 0;
+                if (boxCount <= 0) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "物料 " + item.getMaterialCode() + " 的入库箱数或计划件数必须大于 0");
+                }
+                planQty = boxCount * packCapacity;
             }
-            int planQty = boxCount * packCapacity;
 
             InboundDetail detail = new InboundDetail();
             detail.setInboundId(order.getId());
@@ -306,8 +335,14 @@ public class InboundServiceImpl implements InboundService {
             inboundDetailMapper.insert(detail);
 
             for (int i = 0; i < boxCount; i++) {
+                boolean isLastBox = (i == boxCount - 1);
+                int boxQty = isLastBox
+                        ? planQty - (boxCount - 1) * packCapacity
+                        : packCapacity;
+                if (boxQty <= 0) boxQty = packCapacity;
+
                 String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode, planQty,
-                        packCapacity, planQty, i + 1, orderNo);
+                        packCapacity, boxQty, i + 1);
                 Barcode barcode = new Barcode();
                 barcode.setMaterialCode(item.getMaterialCode());
                 barcode.setSupplierCode(supplierCode);
@@ -315,7 +350,7 @@ public class InboundServiceImpl implements InboundService {
                 barcode.setStatus("待入库");
                 barcode.setInboundId(order.getId());
                 barcode.setType("inbound");
-                barcode.setRemainingQty(packCapacity);
+                barcode.setRemainingQty(boxQty);
                 barcodeMapper.insert(barcode);
                 // 逐箱错开 1 秒，确保 FIFO 排序可区分
                 Barcode updateTime2 = new Barcode();
@@ -566,21 +601,26 @@ public class InboundServiceImpl implements InboundService {
         return barcode;
     }
 
+    /**
+     * 构建统一编码规则的看板号。
+     * 格式：WMS|物料|供应商|计划数|箱容量|实收数|箱号（7段，竖线分隔）
+     *
+     * @author Focus
+     * @date 2026-06-28
+     */
     private String buildBarcode(String materialCode,
                                 String supplierCode,
                                 int planQty,
                                 int packCapacity,
                                 int actualQty,
-                                int boxNo,
-                                String orderNo) {
-        return String.format("WMS|%s|%s|%d|%d|%d|%d|%s",
+                                int boxNo) {
+        return String.format("WMS|%s|%s|%d|%d|%d|%d",
                 materialCode,
                 supplierCode,
                 planQty,
                 packCapacity,
                 actualQty,
-                boxNo,
-                orderNo);
+                boxNo);
     }
 
     private int parseIntSafe(String s, int defaultVal) {

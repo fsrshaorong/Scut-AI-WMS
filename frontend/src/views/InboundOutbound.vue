@@ -104,7 +104,7 @@
     <!-- 新建入库单右侧抽屉 -->
     <el-drawer v-model="dialogVisible" title="新建入库单"
       direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
-      @opened="onCreateDialogOpened">
+>
         <el-alert v-if="isAiDraft" title="已根据 AI 建议预填物料和计划数量，请选择供应商后保存。"
           type="info" show-icon :closable="false" class="draft-alert" />
         <el-form ref="formRef" :model="inboundForm" :rules="inboundRules" label-width="88px">
@@ -130,107 +130,37 @@
             </div>
           </el-form-item>
 
-          <!-- 物料目录（批量选择 — 聚合所有选中供应商的物料） -->
-          <el-form-item v-if="inboundForm.selectedSuppliers.length > 0" label="物料目录">
-            <div class="catalog-panel">
-              <div class="catalog-toolbar">
-                <el-input v-model="catalogSearch" placeholder="搜索物料号或名称" size="small"
-                  clearable style="width: 200px" />
-                <el-button size="small" @click="selectAllCatalog">全选</el-button>
-                <el-button size="small" @click="invertCatalog">反选</el-button>
-                <span class="catalog-hint">已选 {{ catalogChecked.length }} / {{ catalogMaterials.length }} 种</span>
+          <!-- 物料管理：已选摘要 + 弹窗入口 -->
+          <el-form-item v-if="inboundForm.selectedSuppliers.length > 0" label="物料管理">
+            <div class="material-summary">
+              <div v-if="materialCount(inboundForm.details) === 0" class="summary-empty">
+                尚未选择物料，请点击下方按钮添加
               </div>
-              <div class="catalog-scroll">
-                <el-table :data="filteredCatalog" size="small" max-height="300"
-                  @selection-change="onCatalogSelect" ref="catalogTableRef" row-key="materialCode">
-                  <el-table-column type="selection" width="36" :selectable="catalogSelectable" />
-                  <el-table-column prop="materialCode" label="物料号" width="130" />
-                  <el-table-column prop="materialName" label="物料名称" min-width="120" show-overflow-tooltip />
-                  <el-table-column label="供应商" width="120" show-overflow-tooltip>
-                    <template #default="{ row }">
-                      <span class="supplier-code-text">{{ row._supplierCode || '' }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="器具类型" width="100">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packType || '未配置' }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="单箱容量" width="80" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packCapacity || '—' }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div class="catalog-actions">
-                <el-button type="primary" size="small" @click="batchAddToInbound"
-                  :disabled="catalogChecked.length === 0">
-                  <el-icon :size="14"><Plus /></el-icon>
-                  批量添加选中物料 ({{ catalogChecked.length }})
-                </el-button>
-              </div>
-            </div>
-          </el-form-item>
-
-          <!-- 物料明细编辑区 -->
-          <el-form-item label="物料明细" prop="details">
-            <div class="detail-editor">
-              <!-- 批量操作工具栏 -->
-              <div class="batch-toolbar">
-                <span class="batch-label">统一箱数</span>
-                <el-input-number v-model="uniformBoxCount" :min="1" :max="999999" size="small"
-                  controls-position="right" style="width: 120px" />
-                <el-button size="small" @click="applyUniformBoxCount('inbound')">应用</el-button>
-                <el-divider direction="vertical" />
-                <el-button size="small" @click="clearAllDetails('inbound')" :disabled="inboundForm.details.length <= 1">
-                  <el-icon :size="14"><Delete /></el-icon>清空列表
-                </el-button>
-                <span class="batch-summary">
-                  共 <b>{{ inboundForm.details.filter(d => d.materialCode).length }}</b> 种物料 /
+              <el-table v-else :data="inboundForm.details.filter(d => d.materialCode)" size="small" max-height="240">
+                <el-table-column type="index" label="#" width="40" />
+                <el-table-column prop="materialCode" label="物料号" width="140" />
+                <el-table-column label="器具类型" width="100">
+                  <template #default="{ row }">{{ row.packType || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="单箱容量" width="80" align="right">
+                  <template #default="{ row }">{{ row.packCapacity || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="入库箱数" width="90" align="right">
+                  <template #default="{ row }">{{ row.boxCount }}</template>
+                </el-table-column>
+                <el-table-column label="总件数" width="90" align="right">
+                  <template #default="{ row }">{{ row.planQty || (row.boxCount * row.packCapacity) }}</template>
+                </el-table-column>
+              </el-table>
+              <div class="summary-footer">
+                <span>
+                  共 <b>{{ materialCount(inboundForm.details) }}</b> 种物料 /
                   <b>{{ inboundTotalBoxes }}</b> 箱 /
                   <b>{{ inboundTotalQty }}</b> 件
                 </span>
-              </div>
-              <!-- 表头 -->
-              <div class="detail-head detail-head-7">
-                <span class="col-seq">#</span>
-                <span>物料号</span>
-                <span>器具类型</span>
-                <span>单箱容量</span>
-                <span>入库箱数</span>
-                <span>总数</span>
-                <span>操作</span>
-              </div>
-              <!-- 明细行滚动区 -->
-              <div class="detail-scroll">
-                <div v-for="(item, idx) in inboundForm.details" :key="idx" class="detail-row detail-row-7">
-                  <span class="col-seq seq-num">{{ idx + 1 }}</span>
-                  <el-select v-model="item.materialCode"
-                    :placeholder="inboundForm.selectedSuppliers.length > 0 ? '搜索物料号' : '请先添加供应商'"
-                    size="small" filterable remote
-                    :remote-method="(q) => searchMaterials(q, idx)"
-                    :loading="materialSearchLoading[idx]" clearable style="width: 100%"
-                    :disabled="inboundForm.selectedSuppliers.length === 0"
-                    @focus="searchMaterials('', idx)"
-                    @change="(val) => fetchPackCapacity(idx, val)">
-                    <el-option v-for="m in materialOptions[idx]" :key="m.materialCode"
-                      :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
-                  </el-select>
-                  <span class="readonly-cell" :title="item.packType">{{ item.packType || '—' }}</span>
-                  <span class="readonly-cell">{{ item.packCapacity || '—' }}</span>
-                  <el-input-number v-model="item.boxCount" :min="1" :max="999999" size="small"
-                    controls-position="right" />
-                  <span class="readonly-cell total-cell">{{ calcRowTotal(item) }}</span>
-                  <el-button type="danger" link size="small" @click="removeDetail(idx)"
-                    :disabled="inboundForm.details.length <= 1">
-                    <el-icon :size="14"><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="detail-actions">
-                <el-button type="primary" link size="small" @click="addDetail">
-                  <el-icon :size="14"><Plus /></el-icon>手动添加一行
+                <el-button type="primary" size="small" @click="openMaterialPicker('inbound')">
+                  <el-icon :size="14"><Plus /></el-icon>
+                  管理物料明细
                 </el-button>
               </div>
             </div>
@@ -359,7 +289,7 @@
     <!-- 修改入库单右侧抽屉 -->
     <el-drawer v-model="editVisible" title="修改入库单"
       direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
-      @opened="onEditDialogOpened">
+>
         <el-alert title="修改后需重新确认入库，原确认信息将被清除。"
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="editFormRef" :model="editForm" :rules="inboundRules" label-width="88px">
@@ -371,92 +301,37 @@
             </el-select>
           </el-form-item>
 
-          <!-- 物料目录（批量选择） -->
-          <el-form-item v-if="editForm.supplierCode" label="物料目录">
-            <div class="catalog-panel">
-              <div class="catalog-toolbar">
-                <el-input v-model="editCatalogSearch" placeholder="搜索物料号或名称" size="small"
-                  clearable style="width: 200px" />
-                <el-button size="small" @click="selectAllEditCatalog">全选</el-button>
-                <el-button size="small" @click="invertEditCatalog">反选</el-button>
-                <span class="catalog-hint">已选 {{ editCatalogChecked.length }} / {{ editCatalogMaterials.length }} 种</span>
+          <!-- 物料管理：已选摘要 + 弹窗入口 -->
+          <el-form-item v-if="editForm.supplierCode" label="物料管理">
+            <div class="material-summary">
+              <div v-if="materialCount(editForm.details) === 0" class="summary-empty">
+                尚未选择物料，请点击下方按钮添加
               </div>
-              <div class="catalog-scroll">
-                <el-table :data="filteredEditCatalog" size="small" max-height="300"
-                  @selection-change="onEditCatalogSelect" ref="editCatalogTableRef" row-key="materialCode">
-                  <el-table-column type="selection" width="36" :selectable="editCatalogSelectable" />
-                  <el-table-column prop="materialCode" label="物料号" width="140" />
-                  <el-table-column prop="materialName" label="物料名称" min-width="140" show-overflow-tooltip />
-                  <el-table-column label="器具类型" width="110">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packType || '未配置' }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="单箱容量" width="80" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packCapacity || '—' }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div class="catalog-actions">
-                <el-button type="primary" size="small" @click="batchAddToEditInbound"
-                  :disabled="editCatalogChecked.length === 0">
-                  <el-icon :size="14"><Plus /></el-icon>
-                  批量添加选中物料 ({{ editCatalogChecked.length }})
-                </el-button>
-              </div>
-            </div>
-          </el-form-item>
-
-          <!-- 物料明细编辑区 -->
-          <el-form-item label="物料明细" prop="details">
-            <div class="detail-editor">
-              <div class="batch-toolbar">
-                <span class="batch-label">统一箱数</span>
-                <el-input-number v-model="editUniformBoxCount" :min="1" :max="999999" size="small"
-                  controls-position="right" style="width: 120px" />
-                <el-button size="small" @click="applyUniformBoxCount('editInbound')">应用</el-button>
-                <el-divider direction="vertical" />
-                <el-button size="small" @click="clearAllDetails('editInbound')" :disabled="editForm.details.length <= 1">
-                  <el-icon :size="14"><Delete /></el-icon>清空列表
-                </el-button>
-                <span class="batch-summary">
-                  共 <b>{{ editForm.details.filter(d => d.materialCode).length }}</b> 种物料 /
+              <el-table v-else :data="editForm.details.filter(d => d.materialCode)" size="small" max-height="240">
+                <el-table-column type="index" label="#" width="40" />
+                <el-table-column prop="materialCode" label="物料号" width="140" />
+                <el-table-column label="器具类型" width="100">
+                  <template #default="{ row }">{{ row.packType || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="单箱容量" width="80" align="right">
+                  <template #default="{ row }">{{ row.packCapacity || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="入库箱数" width="90" align="right">
+                  <template #default="{ row }">{{ row.boxCount }}</template>
+                </el-table-column>
+                <el-table-column label="总件数" width="90" align="right">
+                  <template #default="{ row }">{{ row.planQty || (row.boxCount * row.packCapacity) }}</template>
+                </el-table-column>
+              </el-table>
+              <div class="summary-footer">
+                <span>
+                  共 <b>{{ materialCount(editForm.details) }}</b> 种物料 /
                   <b>{{ editInboundTotalBoxes }}</b> 箱 /
                   <b>{{ editInboundTotalQty }}</b> 件
                 </span>
-              </div>
-              <div class="detail-head detail-head-7">
-                <span class="col-seq">#</span>
-                <span>物料号</span><span>器具类型</span><span>单箱容量</span><span>入库箱数</span><span>总数</span><span>操作</span>
-              </div>
-              <div class="detail-scroll">
-                <div v-for="(item, idx) in editForm.details" :key="idx" class="detail-row detail-row-7">
-                  <span class="col-seq seq-num">{{ idx + 1 }}</span>
-                  <el-select v-model="item.materialCode"
-                    placeholder="搜索物料号"
-                    size="small" filterable remote
-                    :remote-method="(q) => searchEditMaterials(q, idx)"
-                    :loading="editMaterialLoading[idx]" clearable style="width: 100%"
-                    @focus="searchEditMaterials('', idx)"
-                    @change="(val) => fetchEditPackCapacity(idx, val)">
-                    <el-option v-for="m in editMaterialOptions[idx]" :key="m.materialCode"
-                      :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
-                  </el-select>
-                  <span class="readonly-cell" :title="item.packType">{{ item.packType || '—' }}</span>
-                  <span class="readonly-cell">{{ item.packCapacity || '—' }}</span>
-                  <el-input-number v-model="item.boxCount" :min="1" :max="999999" size="small" controls-position="right" />
-                  <span class="readonly-cell total-cell">{{ calcRowTotal(item) }}</span>
-                  <el-button type="danger" link size="small" @click="removeEditDetail(idx)"
-                    :disabled="editForm.details.length <= 1">
-                    <el-icon :size="14"><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="detail-actions">
-                <el-button type="primary" link size="small" @click="addEditDetail">
-                  <el-icon :size="14"><Plus /></el-icon>手动添加一行
+                <el-button type="primary" size="small" @click="openMaterialPicker('editInbound')">
+                  <el-icon :size="14"><Plus /></el-icon>
+                  管理物料明细
                 </el-button>
               </div>
             </div>
@@ -530,98 +405,40 @@
     <!-- 新建出库单右侧抽屉 -->
     <el-drawer v-model="outDialogVisible" title="新建出库单"
       direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
-      @opened="onOutDialogOpened">
+>
         <el-form ref="outFormRef" :model="outboundForm" label-width="88px">
 
-          <!-- 物料目录（全部物料） -->
-          <el-form-item label="物料目录">
-            <div class="catalog-panel">
-              <div class="catalog-toolbar">
-                <el-input v-model="outCatalogSearch" placeholder="搜索物料号或名称" size="small"
-                  clearable style="width: 200px" />
-                <el-button size="small" @click="selectAllOutCatalog">全选</el-button>
-                <el-button size="small" @click="invertOutCatalog">反选</el-button>
-                <span class="catalog-hint">已选 {{ outCatalogChecked.length }} / {{ outCatalogMaterials.length }} 种</span>
+          <!-- 物料管理：已选摘要 + 弹窗入口（出库无供应商限制） -->
+          <el-form-item label="物料管理">
+            <div class="material-summary">
+              <div v-if="materialCount(outboundForm.details) === 0" class="summary-empty">
+                尚未选择物料，请点击下方按钮添加
               </div>
-              <div class="catalog-scroll">
-                <el-table :data="filteredOutCatalog" size="small" max-height="300"
-                  @selection-change="onOutCatalogSelect" ref="outCatalogTableRef" row-key="materialCode">
-                  <el-table-column type="selection" width="36" :selectable="outCatalogSelectable" />
-                  <el-table-column prop="materialCode" label="物料号" width="140" />
-                  <el-table-column prop="materialName" label="物料名称" min-width="140" show-overflow-tooltip />
-                  <el-table-column label="器具类型" width="110">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packType || '未配置' }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="单箱容量" width="80" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packCapacity || '—' }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div class="catalog-actions">
-                <el-button type="primary" size="small" @click="batchAddToOutbound"
-                  :disabled="outCatalogChecked.length === 0">
-                  <el-icon :size="14"><Plus /></el-icon>
-                  批量添加选中物料 ({{ outCatalogChecked.length }})
-                </el-button>
-              </div>
-            </div>
-          </el-form-item>
-
-          <el-form-item label="物料明细" prop="details">
-            <div class="detail-editor">
-              <div class="batch-toolbar">
-                <span class="batch-label">统一箱数</span>
-                <el-input-number v-model="outUniformBoxCount" :min="1" :max="999999" size="small"
-                  controls-position="right" style="width: 120px" />
-                <el-button size="small" @click="applyUniformBoxCount('outbound')">应用</el-button>
-                <el-divider direction="vertical" />
-                <el-button size="small" @click="clearAllDetails('outbound')" :disabled="outboundForm.details.length <= 1">
-                  <el-icon :size="14"><Delete /></el-icon>清空列表
-                </el-button>
-                <span class="batch-summary">
-                  共 <b>{{ outboundForm.details.filter(d => d.materialCode).length }}</b> 种物料 /
+              <el-table v-else :data="outboundForm.details.filter(d => d.materialCode)" size="small" max-height="240">
+                <el-table-column type="index" label="#" width="40" />
+                <el-table-column prop="materialCode" label="物料号" width="140" />
+                <el-table-column label="器具类型" width="100">
+                  <template #default="{ row }">{{ row.packType || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="单箱容量" width="80" align="right">
+                  <template #default="{ row }">{{ row.packCapacity || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="出库箱数" width="90" align="right">
+                  <template #default="{ row }">{{ row.boxCount }}</template>
+                </el-table-column>
+                <el-table-column label="总件数" width="90" align="right">
+                  <template #default="{ row }">{{ row.planQty || (row.boxCount * row.packCapacity) }}</template>
+                </el-table-column>
+              </el-table>
+              <div class="summary-footer">
+                <span>
+                  共 <b>{{ materialCount(outboundForm.details) }}</b> 种物料 /
                   <b>{{ outTotalBoxes }}</b> 箱 /
                   <b>{{ outTotalQty }}</b> 件
                 </span>
-              </div>
-              <div class="detail-head detail-head-7">
-                <span class="col-seq">#</span>
-                <span>物料号</span>
-                <span>器具类型</span>
-                <span>单箱容量</span>
-                <span>出库箱数</span>
-                <span>总数</span>
-                <span>操作</span>
-              </div>
-              <div class="detail-scroll">
-                <div v-for="(item, idx) in outboundForm.details" :key="idx" class="detail-row detail-row-7">
-                  <span class="col-seq seq-num">{{ idx + 1 }}</span>
-                  <el-select v-model="item.materialCode" placeholder="搜索物料号" size="small"
-                    filterable remote :remote-method="(q) => searchOutMaterials(q, idx)"
-                    :loading="outMaterialLoading[idx]" clearable style="width: 100%"
-                    @focus="searchOutMaterials('', idx)"
-                    @change="(val) => fetchOutPackCapacity(idx, val)">
-                    <el-option v-for="m in outMaterialOptions[idx]" :key="m.materialCode"
-                      :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
-                  </el-select>
-                  <span class="readonly-cell" :title="item.packType">{{ item.packType || '—' }}</span>
-                  <span class="readonly-cell">{{ item.packCapacity || '—' }}</span>
-                  <el-input-number v-model="item.boxCount" :min="1" :max="999999" size="small"
-                    controls-position="right" />
-                  <span class="readonly-cell total-cell">{{ calcRowTotal(item) }}</span>
-                  <el-button type="danger" link size="small" @click="removeOutDetail(idx)"
-                    :disabled="outboundForm.details.length <= 1">
-                    <el-icon :size="14"><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="detail-actions">
-                <el-button type="primary" link size="small" @click="addOutDetail">
-                  <el-icon :size="14"><Plus /></el-icon>手动添加一行
+                <el-button type="primary" size="small" @click="openMaterialPicker('outbound')">
+                  <el-icon :size="14"><Plus /></el-icon>
+                  管理物料明细
                 </el-button>
               </div>
             </div>
@@ -761,94 +578,42 @@
     <!-- 修改出库单右侧抽屉 -->
     <el-drawer v-model="outEditVisible" title="修改出库单"
       direction="rtl" size="65%" destroy-on-close :close-on-click-modal="false"
-      @opened="onOutEditDialogOpened">
+>
         <el-alert title="修改后将重新执行整箱拣选，原出库看板标签将被替换。"
           type="warning" show-icon :closable="false" class="draft-alert" />
         <el-form ref="outEditFormRef" :model="outEditForm" label-width="88px">
 
-          <!-- 物料目录（全部物料） -->
-          <el-form-item label="物料目录">
-            <div class="catalog-panel">
-              <div class="catalog-toolbar">
-                <el-input v-model="outEditCatalogSearch" placeholder="搜索物料号或名称" size="small"
-                  clearable style="width: 200px" />
-                <el-button size="small" @click="selectAllOutEditCatalog">全选</el-button>
-                <el-button size="small" @click="invertOutEditCatalog">反选</el-button>
-                <span class="catalog-hint">已选 {{ outEditCatalogChecked.length }} / {{ outEditCatalogMaterials.length }} 种</span>
+          <!-- 物料管理：已选摘要 + 弹窗入口（出库无供应商限制） -->
+          <el-form-item label="物料管理">
+            <div class="material-summary">
+              <div v-if="materialCount(outEditForm.details) === 0" class="summary-empty">
+                尚未选择物料，请点击下方按钮添加
               </div>
-              <div class="catalog-scroll">
-                <el-table :data="filteredOutEditCatalog" size="small" max-height="300"
-                  @selection-change="onOutEditCatalogSelect" ref="outEditCatalogTableRef" row-key="materialCode">
-                  <el-table-column type="selection" width="36" :selectable="outEditCatalogSelectable" />
-                  <el-table-column prop="materialCode" label="物料号" width="140" />
-                  <el-table-column prop="materialName" label="物料名称" min-width="140" show-overflow-tooltip />
-                  <el-table-column label="器具类型" width="110">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packType || '未配置' }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="单箱容量" width="80" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'text-warn': !row._appliance }">{{ row._packCapacity || '—' }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div class="catalog-actions">
-                <el-button type="primary" size="small" @click="batchAddToOutEdit"
-                  :disabled="outEditCatalogChecked.length === 0">
-                  <el-icon :size="14"><Plus /></el-icon>
-                  批量添加选中物料 ({{ outEditCatalogChecked.length }})
-                </el-button>
-              </div>
-            </div>
-          </el-form-item>
-
-          <el-form-item label="物料明细" prop="details">
-            <div class="detail-editor">
-              <div class="batch-toolbar">
-                <span class="batch-label">统一箱数</span>
-                <el-input-number v-model="outEditUniformBoxCount" :min="1" :max="999999" size="small"
-                  controls-position="right" style="width: 120px" />
-                <el-button size="small" @click="applyUniformBoxCount('outEdit')">应用</el-button>
-                <el-divider direction="vertical" />
-                <el-button size="small" @click="clearAllDetails('outEdit')" :disabled="outEditForm.details.length <= 1">
-                  <el-icon :size="14"><Delete /></el-icon>清空列表
-                </el-button>
-                <span class="batch-summary">
-                  共 <b>{{ outEditForm.details.filter(d => d.materialCode).length }}</b> 种物料 /
+              <el-table v-else :data="outEditForm.details.filter(d => d.materialCode)" size="small" max-height="240">
+                <el-table-column type="index" label="#" width="40" />
+                <el-table-column prop="materialCode" label="物料号" width="140" />
+                <el-table-column label="器具类型" width="100">
+                  <template #default="{ row }">{{ row.packType || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="单箱容量" width="80" align="right">
+                  <template #default="{ row }">{{ row.packCapacity || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="出库箱数" width="90" align="right">
+                  <template #default="{ row }">{{ row.boxCount }}</template>
+                </el-table-column>
+                <el-table-column label="总件数" width="90" align="right">
+                  <template #default="{ row }">{{ row.planQty || (row.boxCount * row.packCapacity) }}</template>
+                </el-table-column>
+              </el-table>
+              <div class="summary-footer">
+                <span>
+                  共 <b>{{ materialCount(outEditForm.details) }}</b> 种物料 /
                   <b>{{ outEditTotalBoxes }}</b> 箱 /
                   <b>{{ outEditTotalQty }}</b> 件
                 </span>
-              </div>
-              <div class="detail-head detail-head-7">
-                <span class="col-seq">#</span>
-                <span>物料号</span><span>器具类型</span><span>单箱容量</span><span>出库箱数</span><span>总数</span><span>操作</span>
-              </div>
-              <div class="detail-scroll">
-                <div v-for="(item, idx) in outEditForm.details" :key="idx" class="detail-row detail-row-7">
-                  <span class="col-seq seq-num">{{ idx + 1 }}</span>
-                  <el-select v-model="item.materialCode" placeholder="搜索物料号" size="small"
-                    filterable remote :remote-method="(q) => searchOutEditMaterials(q, idx)"
-                    :loading="outEditMaterialLoading[idx]" clearable style="width: 100%"
-                    @focus="searchOutEditMaterials('', idx)"
-                    @change="(val) => fetchOutEditPackCapacity(idx, val)">
-                    <el-option v-for="m in outEditMaterialOptions[idx]" :key="m.materialCode"
-                      :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
-                  </el-select>
-                  <span class="readonly-cell" :title="item.packType">{{ item.packType || '—' }}</span>
-                  <span class="readonly-cell">{{ item.packCapacity || '—' }}</span>
-                  <el-input-number v-model="item.boxCount" :min="1" :max="999999" size="small" controls-position="right" />
-                  <span class="readonly-cell total-cell">{{ calcRowTotal(item) }}</span>
-                  <el-button type="danger" link size="small" @click="removeOutEditDetail(idx)"
-                    :disabled="outEditForm.details.length <= 1">
-                    <el-icon :size="14"><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="detail-actions">
-                <el-button type="primary" link size="small" @click="addOutEditDetail">
-                  <el-icon :size="14"><Plus /></el-icon>手动添加一行
+                <el-button type="primary" size="small" @click="openMaterialPicker('outEdit')">
+                  <el-icon :size="14"><Plus /></el-icon>
+                  管理物料明细
                 </el-button>
               </div>
             </div>
@@ -864,6 +629,15 @@
           </div>
         </template>
     </el-drawer>
+
+    <!-- 物料选择弹窗（Teleport to body，独立于抽屉） -->
+    <MaterialPickerDialog
+      v-model="pickerVisible"
+      v-model:details="pickerDetails"
+      :supplier-codes="pickerSupplierCodes"
+      :title="pickerTitle"
+      :type="pickerType"
+    />
 
     <!-- 入库流水查询对话框 -->
     <Teleport to="body">
@@ -945,6 +719,7 @@ import { getAppliances } from '@/api/appliances'
 import { useUserStore } from '@/stores/user'
 import QRCode from '@/components/QRCode.vue'
 import BoxLabel from '@/components/BoxLabel.vue'
+import MaterialPickerDialog from '@/components/MaterialPickerDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -952,32 +727,40 @@ const userStore = useUserStore()
 
 const activeTab = ref('inbound')
 
-// ==================== 物料目录（批量选择） ====================
-const catalogMaterials = ref([])
-const catalogChecked = ref([])
-const catalogSearch = ref('')
-const catalogTableRef = ref(null)
-const uniformBoxCount = ref(1)
-
-const editCatalogMaterials = ref([])
-const editCatalogChecked = ref([])
-const editCatalogSearch = ref('')
-const editCatalogTableRef = ref(null)
-const editUniformBoxCount = ref(1)
-
-const outCatalogMaterials = ref([])
-const outCatalogChecked = ref([])
-const outCatalogSearch = ref('')
-const outCatalogTableRef = ref(null)
-const outUniformBoxCount = ref(1)
-
-const outEditCatalogMaterials = ref([])
-const outEditCatalogChecked = ref([])
-const outEditCatalogSearch = ref('')
-const outEditCatalogTableRef = ref(null)
-const outEditUniformBoxCount = ref(1)
-
 const pendingSuppliers = ref([]) // 待确认的多选供应商
+
+// ==================== 物料选择弹窗 ====================
+const pickerVisible = ref(false)
+const pickerDetails = ref([])       // 当前编辑的 details 引用
+const pickerSupplierCodes = ref([]) // 当前表单的供应商列表
+const pickerTitle = ref('')
+const pickerType = ref('inbound')
+
+/** 统计明细中已填物料的行数 */
+function materialCount(details) {
+  return details.filter(d => d.materialCode).length
+}
+
+/** 打开物料选择弹窗 */
+function openMaterialPicker(formType) {
+  const formMap = {
+    inbound: inboundForm,
+    editInbound: editForm,
+    outbound: outboundForm,
+    outEdit: outEditForm
+  }
+  const form = formMap[formType]
+  if (!form) return
+  pickerDetails.value = form.details
+  pickerType.value = formType.startsWith('inbound') || formType.startsWith('edit')
+    ? 'inbound' : 'outbound'
+  pickerSupplierCodes.value = pickerType.value === 'inbound'
+    ? (form.selectedSuppliers || [form.supplierCode]).filter(Boolean)
+    : []
+  pickerTitle.value = pickerType.value === 'inbound'
+    ? '选择入库物料' : '选择出库物料'
+  pickerVisible.value = true
+}
 
 // ==================== 供应商多选计算属性 ====================
 /** 未被选中的供应商列表（el-select 自带搜索过滤） */
@@ -990,47 +773,26 @@ const inboundTotalBoxes = computed(() =>
   inboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) : 0), 0)
 )
 const inboundTotalQty = computed(() =>
-  inboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) * (d.packCapacity || 0) : 0), 0)
+  inboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.planQty > 0 ? d.planQty : (d.boxCount || 0) * (d.packCapacity || 0)) : 0), 0)
 )
 const editInboundTotalBoxes = computed(() =>
   editForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) : 0), 0)
 )
 const editInboundTotalQty = computed(() =>
-  editForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) * (d.packCapacity || 0) : 0), 0)
+  editForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.planQty > 0 ? d.planQty : (d.boxCount || 0) * (d.packCapacity || 0)) : 0), 0)
 )
 const outTotalBoxes = computed(() =>
   outboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) : 0), 0)
 )
 const outTotalQty = computed(() =>
-  outboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) * (d.packCapacity || 0) : 0), 0)
+  outboundForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.planQty > 0 ? d.planQty : (d.boxCount || 0) * (d.packCapacity || 0)) : 0), 0)
 )
 const outEditTotalBoxes = computed(() =>
   outEditForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) : 0), 0)
 )
 const outEditTotalQty = computed(() =>
-  outEditForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.boxCount || 0) * (d.packCapacity || 0) : 0), 0)
+  outEditForm.details.reduce((sum, d) => sum + (d.materialCode ? (d.planQty > 0 ? d.planQty : (d.boxCount || 0) * (d.packCapacity || 0)) : 0), 0)
 )
-
-const filteredCatalog = computed(() => {
-  if (!catalogSearch.value) return catalogMaterials.value
-  const kw = catalogSearch.value.toLowerCase()
-  return catalogMaterials.value.filter(m => m.materialCode?.toLowerCase().includes(kw) || m.materialName?.toLowerCase().includes(kw))
-})
-const filteredEditCatalog = computed(() => {
-  if (!editCatalogSearch.value) return editCatalogMaterials.value
-  const kw = editCatalogSearch.value.toLowerCase()
-  return editCatalogMaterials.value.filter(m => m.materialCode?.toLowerCase().includes(kw) || m.materialName?.toLowerCase().includes(kw))
-})
-const filteredOutCatalog = computed(() => {
-  if (!outCatalogSearch.value) return outCatalogMaterials.value
-  const kw = outCatalogSearch.value.toLowerCase()
-  return outCatalogMaterials.value.filter(m => m.materialCode?.toLowerCase().includes(kw) || m.materialName?.toLowerCase().includes(kw))
-})
-const filteredOutEditCatalog = computed(() => {
-  if (!outEditCatalogSearch.value) return outEditCatalogMaterials.value
-  const kw = outEditCatalogSearch.value.toLowerCase()
-  return outEditCatalogMaterials.value.filter(m => m.materialCode?.toLowerCase().includes(kw) || m.materialName?.toLowerCase().includes(kw))
-})
 
 // ==================== 入库列表 ====================
 const inboundList = ref([])
@@ -1046,26 +808,20 @@ const isAiDraft = ref(false)
 
 const inboundForm = reactive({
   selectedSuppliers: [],
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
+  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 const inboundRules = {
   supplierCode: [{ required: true, message: '请选择供应商', trigger: 'change' }]
 }
-
-// ==================== 物料搜索下拉 ====================
-const materialOptions = ref({})
-const materialSearchLoading = ref({})
 
 // ==================== 修改入库单 ====================
 const editVisible = ref(false)
 const editFormRef = ref(null)
 const editTarget = ref(null)
 const editSubmitting = ref(false)
-const editMaterialOptions = ref({})
-const editMaterialLoading = ref({})
 const editForm = reactive({
   supplierCode: '',
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
+  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 
 // ==================== 确认入库 ====================
@@ -1121,67 +877,13 @@ async function loadSuppliers() {
   } catch { /* */ }
 }
 
-// ==================== 物料搜索 ====================
-/**
- * 搜索物料（新建入库单），必须已选择供应商。
- */
-async function searchMaterials(query, idx) {
-  // 未选供应商时不发起搜索
-  if (inboundForm.selectedSuppliers.length === 0) {
-    materialOptions.value[idx] = []
-    return
-  }
-  materialSearchLoading.value[idx] = true
-  try {
-    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
-    // 仅显示选中供应商的物料
-    const supplierSet = new Set(inboundForm.selectedSuppliers)
-    materialOptions.value[idx] = (data.records || []).filter(m => supplierSet.has(m.supplierCode))
-  } catch {
-    materialOptions.value[idx] = []
-  } finally {
-    materialSearchLoading.value[idx] = false
-  }
-}
-
-/**
- * 当物料被选中时，自动从器具配置获取包装容量和器具类型（只读）。
- * 按物料号匹配，不限定供应商。
- */
-async function fetchPackCapacity(idx, materialCode) {
-  if (!materialCode) {
-    inboundForm.details[idx].packType = ''
-    inboundForm.details[idx].packCapacity = 0
-    return
-  }
-  try {
-    const data = await getAppliances({ page: 1, size: 20, keyword: materialCode })
-    const match = (data.records || []).find(a => a.materialCode === materialCode)
-    if (match && match.packCapacity > 0) {
-      inboundForm.details[idx].packType = match.packType || ''
-      inboundForm.details[idx].packCapacity = match.packCapacity
-    } else {
-      inboundForm.details[idx].packType = ''
-      inboundForm.details[idx].packCapacity = 0
-    }
-  } catch { /* 获取失败时保留默认值 */ }
-}
-
-// ==================== 新建入库单 ====================
-function addDetail() {
-  inboundForm.details.push({ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 })
-}
-function removeDetail(idx) {
-  if (inboundForm.details.length > 1) inboundForm.details.splice(idx, 1)
-}
-
 /** 获取供应商名称 */
 function getSupplierName(code) {
   const s = supplierOptions.value.find(s => s.supplierCode === code)
   return s ? `${s.supplierName} (${s.supplierCode})` : code
 }
 
-/** 确认添加多选的供应商标签 → 合并加载物料目录 */
+/** 确认添加多选的供应商标签 */
 function confirmAddSuppliers() {
   if (pendingSuppliers.value.length === 0) return
   let added = 0
@@ -1193,8 +895,6 @@ function confirmAddSuppliers() {
   }
   pendingSuppliers.value = []
   if (added > 0) {
-    materialOptions.value = {}
-    loadMultiSupplierCatalog()
     ElMessage.success(`已添加 ${added} 家供应商`)
   }
 }
@@ -1204,26 +904,20 @@ function addSupplier(code) {
   if (!inboundForm.selectedSuppliers.includes(code)) {
     inboundForm.selectedSuppliers.push(code)
     pendingSuppliers.value = []
-    materialOptions.value = {}
-    loadMultiSupplierCatalog()
   }
 }
 
-/** 移除供应商标签 → 刷新目录 */
+/** 移除供应商标签 */
 function removeSupplier(code) {
   const idx = inboundForm.selectedSuppliers.indexOf(code)
   if (idx >= 0) inboundForm.selectedSuppliers.splice(idx, 1)
-  materialOptions.value = {}
-  loadMultiSupplierCatalog()
 }
 
 function openInboundDialog() {
   isAiDraft.value = false
   inboundForm.selectedSuppliers = []
   pendingSuppliers.value = []
-  inboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
-  catalogMaterials.value = []
-  materialOptions.value = {}
+  inboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
   dialogVisible.value = true
 }
 
@@ -1268,10 +962,9 @@ async function applyAiInboundDraft() {
     materialCode,
     packType,
     packCapacity,
-    boxCount
+    boxCount,
+    planQty: suggestedQty
   }]
-  catalogMaterials.value = []
-  materialOptions.value = {}
   dialogVisible.value = true
 
   if (supplierCode) {
@@ -1299,7 +992,7 @@ async function handleCreate() {
   try {
     await createInbound({
       supplierCode: inboundForm.selectedSuppliers[0],
-      details: inboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount }))
+      details: inboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
     })
     ElMessage.success('入库单创建成功')
     dialogVisible.value = false
@@ -1342,74 +1035,16 @@ async function handleConfirmSubmit() {
   }
 }
 
-// ==================== 修改入库单 ====================
 /**
- * 搜索物料（编辑入库单），必须已选择供应商。
- */
-async function searchEditMaterials(query, idx) {
-  if (!editForm.supplierCode) {
-    editMaterialOptions.value[idx] = []
-    return
-  }
-  editMaterialLoading.value[idx] = true
-  try {
-    const data = await getMaterials({
-      page: 1, size: 20,
-      keyword: query || undefined,
-      supplierCode: editForm.supplierCode
-    })
-    editMaterialOptions.value[idx] = data.records || []
-  } catch {
-    editMaterialOptions.value[idx] = []
-  } finally {
-    editMaterialLoading.value[idx] = false
-  }
-}
-
-/**
- * 编辑对话框：当物料被选中时，自动从器具配置获取包装容量和器具类型。
- */
-async function fetchEditPackCapacity(idx, materialCode) {
-  if (!materialCode || !editForm.supplierCode) {
-    editForm.details[idx].packType = ''
-    editForm.details[idx].packCapacity = 0
-    return
-  }
-  try {
-    const data = await getAppliances({ page: 1, size: 10, keyword: materialCode })
-    const match = (data.records || []).find(
-      a => a.materialCode === materialCode && a.supplierCode === editForm.supplierCode
-    )
-    if (match && match.packCapacity > 0) {
-      editForm.details[idx].packType = match.packType || ''
-      editForm.details[idx].packCapacity = match.packCapacity
-    } else {
-      editForm.details[idx].packType = ''
-      editForm.details[idx].packCapacity = 0
-    }
-  } catch { /* 获取失败时保留默认值 */ }
-}
-
-/**
- * 编辑对话框：供应商切换时清空所有物料行并加载物料目录。
+ * 编辑对话框：供应商切换时清空物料明细。
  */
 function onEditSupplierChange() {
-  editForm.details.forEach(item => { item.materialCode = ''; item.packType = ''; item.packCapacity = 0 })
-  editMaterialOptions.value = {}
-  loadEditSupplierCatalog(editForm.supplierCode)
-}
-
-function addEditDetail() {
-  editForm.details.push({ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 })
-}
-function removeEditDetail(idx) {
-  if (editForm.details.length > 1) editForm.details.splice(idx, 1)
+  editForm.details.forEach(item => { item.materialCode = ''; item.packType = ''; item.packCapacity = 0; item.planQty = 0 })
 }
 
 async function openEditDialog(row) {
   editTarget.value = row
   editSubmitting.value = false
-  editMaterialOptions.value = {}
   try {
     const data = await getInboundDetail(row.id)
     editForm.supplierCode = data.supplierCode || ''
@@ -1417,16 +1052,25 @@ async function openEditDialog(row) {
       materialCode: d.materialCode || '',
       packType: '',
       packCapacity: d.packCapacity || 0,
-      boxCount: (d.packCapacity > 0) ? Math.round((d.planQty || 0) / d.packCapacity) : 1
+      boxCount: (d.packCapacity > 0) ? Math.max(1, Math.ceil((d.planQty || 0) / d.packCapacity)) : 1,
+      planQty: d.planQty || ((d.packCapacity > 0) ? Math.max(1, Math.ceil((d.planQty || 0) / d.packCapacity)) * d.packCapacity : 0)
     }))
     if (editForm.details.length === 0) {
       editForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
     }
-    // 重新获取器具信息
-    for (let i = 0; i < editForm.details.length; i++) {
-      if (editForm.details[i].materialCode) {
-        await fetchEditPackCapacity(i, editForm.details[i].materialCode)
-      }
+    // 批量获取器具类型（仅用于摘要展示，明细编辑在弹窗中进行）
+    const materialCodes = [...new Set(editForm.details.map(d => d.materialCode).filter(Boolean))]
+    if (materialCodes.length > 0) {
+      try {
+        const appData = await getAppliances({ page: 1, size: 100 })
+        const apps = appData.records || []
+        for (const d of editForm.details) {
+          if (d.materialCode) {
+            const app = apps.find(a => a.materialCode === d.materialCode && a.supplierCode === editForm.supplierCode)
+            if (app) d.packType = app.packType || ''
+          }
+        }
+      } catch { /* 获取失败也不影响主流程 */ }
     }
     editVisible.value = true
   } catch {
@@ -1452,7 +1096,7 @@ async function handleEditSubmit() {
   try {
     await updateInbound(editTarget.value.id, {
       supplierCode: editForm.supplierCode,
-      details: editForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount }))
+      details: editForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
     })
     ElMessage.success('入库单修改成功')
     editVisible.value = false
@@ -1635,58 +1279,14 @@ async function loadOutboundOrders() {
 // ==================== 新建出库单 ====================
 const outDialogVisible = ref(false)
 const outFormRef = ref(null)
-const outMaterialOptions = ref({})
-const outMaterialLoading = ref({})
 
 const outboundForm = reactive({
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
+  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 
-function addOutDetail() {
-  outboundForm.details.push({ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 })
-}
-function removeOutDetail(idx) {
-  if (outboundForm.details.length > 1) outboundForm.details.splice(idx, 1)
-}
-
 function openOutboundDialog() {
-  outboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
-  outMaterialOptions.value = {}
+  outboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
   outDialogVisible.value = true
-}
-
-async function searchOutMaterials(query, idx) {
-  outMaterialLoading.value[idx] = true
-  try {
-    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
-    outMaterialOptions.value[idx] = data.records || []
-  } catch {
-    outMaterialOptions.value[idx] = []
-  } finally {
-    outMaterialLoading.value[idx] = false
-  }
-}
-
-/**
- * 出库：当物料被选中时，从器具配置获取包装容量（使用物料默认供应商）。
- */
-async function fetchOutPackCapacity(idx, materialCode) {
-  if (!materialCode) {
-    outboundForm.details[idx].packType = ''
-    outboundForm.details[idx].packCapacity = 0
-    return
-  }
-  try {
-    const data = await getAppliances({ page: 1, size: 20, keyword: materialCode })
-    const match = (data.records || []).find(a => a.materialCode === materialCode)
-    if (match && match.packCapacity > 0) {
-      outboundForm.details[idx].packType = match.packType || ''
-      outboundForm.details[idx].packCapacity = match.packCapacity
-    } else {
-      outboundForm.details[idx].packType = ''
-      outboundForm.details[idx].packCapacity = 0
-    }
-  } catch { /* */ }
 }
 
 async function handleOutCreate() {
@@ -1700,7 +1300,7 @@ async function handleOutCreate() {
     return
   }
   try {
-    await createOutbound({ details: outboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount })) })
+    await createOutbound({ details: outboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) })) })
     ElMessage.success('出库单创建成功')
     outDialogVisible.value = false
     loadOutboundOrders()
@@ -1714,66 +1314,38 @@ const outEditVisible = ref(false)
 const outEditFormRef = ref(null)
 const outEditTarget = ref(null)
 const outEditSubmitting = ref(false)
-const outEditMaterialOptions = ref({})
-const outEditMaterialLoading = ref({})
 const outEditForm = reactive({
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
+  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
-
-function addOutEditDetail() { outEditForm.details.push({ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }) }
-function removeOutEditDetail(idx) { if (outEditForm.details.length > 1) outEditForm.details.splice(idx, 1) }
-
-async function searchOutEditMaterials(query, idx) {
-  outEditMaterialLoading.value[idx] = true
-  try {
-    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
-    outEditMaterialOptions.value[idx] = data.records || []
-  } catch { outEditMaterialOptions.value[idx] = [] }
-  finally { outEditMaterialLoading.value[idx] = false }
-}
-
-/**
- * 出库编辑：当物料被选中时，从器具配置获取包装容量。
- */
-async function fetchOutEditPackCapacity(idx, materialCode) {
-  if (!materialCode) {
-    outEditForm.details[idx].packType = ''
-    outEditForm.details[idx].packCapacity = 0
-    return
-  }
-  try {
-    const data = await getAppliances({ page: 1, size: 20, keyword: materialCode })
-    const match = (data.records || []).find(a => a.materialCode === materialCode)
-    if (match && match.packCapacity > 0) {
-      outEditForm.details[idx].packType = match.packType || ''
-      outEditForm.details[idx].packCapacity = match.packCapacity
-    } else {
-      outEditForm.details[idx].packType = ''
-      outEditForm.details[idx].packCapacity = 0
-    }
-  } catch { /* */ }
-}
 
 async function openOutEditDialog(row) {
   outEditTarget.value = row
   outEditSubmitting.value = false
-  outEditMaterialOptions.value = {}
   try {
     const data = await getOutboundDetail(row.id)
     outEditForm.details = (data.details || []).map(d => ({
       materialCode: d.materialCode || '',
       packType: '',
       packCapacity: d.packCapacity || 0,
-      boxCount: (d.packCapacity > 0) ? Math.round((d.planQty || 0) / d.packCapacity) : 1
+      boxCount: (d.packCapacity > 0) ? Math.max(1, Math.ceil((d.planQty || 0) / d.packCapacity)) : 1,
+      planQty: d.planQty || ((d.packCapacity > 0) ? Math.max(1, Math.ceil((d.planQty || 0) / d.packCapacity)) * d.packCapacity : 0)
     }))
     if (outEditForm.details.length === 0) {
       outEditForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1 }]
     }
-    // 重新获取器具信息
-    for (let i = 0; i < outEditForm.details.length; i++) {
-      if (outEditForm.details[i].materialCode) {
-        await fetchOutEditPackCapacity(i, outEditForm.details[i].materialCode)
-      }
+    // 批量获取器具类型（仅用于摘要展示）
+    const materialCodes = [...new Set(outEditForm.details.map(d => d.materialCode).filter(Boolean))]
+    if (materialCodes.length > 0) {
+      try {
+        const appData = await getAppliances({ page: 1, size: 100 })
+        const apps = appData.records || []
+        for (const d of outEditForm.details) {
+          if (d.materialCode) {
+            const app = apps.find(a => a.materialCode === d.materialCode)
+            if (app) d.packType = app.packType || ''
+          }
+        }
+      } catch { /* */ }
     }
     outEditVisible.value = true
   } catch { ElMessage.error('加载出库单详情失败') }
@@ -1791,7 +1363,7 @@ async function handleOutEditSubmit() {
   }
   outEditSubmitting.value = true
   try {
-    await updateOutbound(outEditTarget.value.id, { details: outEditForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount })) })
+    await updateOutbound(outEditTarget.value.id, { details: outEditForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) })) })
     ElMessage.success('出库单修改成功')
     outEditVisible.value = false
     loadOutboundOrders()
@@ -1976,295 +1548,6 @@ async function loadHistories() {
   }
 }
 
-// ==================== 物料目录加载 ====================
-
-/** 加载供应商物料目录（含器具信息） — 支持单供应商回退 */
-async function loadSupplierCatalog(supplierCode) {
-  if (!supplierCode) { catalogMaterials.value = []; return }
-  try {
-    const [matRes, appRes] = await Promise.all([
-      getMaterials({ page: 1, size: 200, supplierCode }),
-      getAppliances({ page: 1, size: 500 })
-    ])
-    const materials = matRes.records || []
-    const appliances = appRes.records || []
-    catalogMaterials.value = materials.map(m => {
-      const app = appliances.find(a => a.materialCode === m.materialCode && a.supplierCode === supplierCode)
-      return {
-        materialCode: m.materialCode,
-        materialName: m.materialName,
-        _supplierCode: supplierCode,
-        _appliance: !!app,
-        _packType: app?.packType || '',
-        _packCapacity: app?.packCapacity || 0
-      }
-    })
-  } catch { catalogMaterials.value = [] }
-}
-
-/** 聚合加载所有选中供应商的物料目录 */
-async function loadMultiSupplierCatalog() {
-  const suppliers = inboundForm.selectedSuppliers
-  if (suppliers.length === 0) { catalogMaterials.value = []; return }
-  try {
-    const [matRes, appRes] = await Promise.all([
-      getMaterials({ page: 1, size: 500 }),
-      getAppliances({ page: 1, size: 500 })
-    ])
-    const supplierSet = new Set(suppliers)
-    const materials = (matRes.records || []).filter(m => supplierSet.has(m.supplierCode))
-    const appliances = appRes.records || []
-    catalogMaterials.value = materials.map(m => {
-      const app = appliances.find(a => a.materialCode === m.materialCode && a.supplierCode === m.supplierCode)
-      return {
-        materialCode: m.materialCode,
-        materialName: m.materialName,
-        _supplierCode: m.supplierCode,
-        _appliance: !!app,
-        _packType: app?.packType || '',
-        _packCapacity: app?.packCapacity || 0
-      }
-    })
-  } catch { catalogMaterials.value = [] }
-}
-
-async function loadEditSupplierCatalog(supplierCode) {
-  try {
-    const [matRes, appRes] = await Promise.all([
-      getMaterials({ page: 1, size: 200, supplierCode }),
-      getAppliances({ page: 1, size: 500 })
-    ])
-    const materials = matRes.records || []
-    const appliances = appRes.records || []
-    editCatalogMaterials.value = materials.map(m => {
-      const app = appliances.find(a => a.materialCode === m.materialCode && a.supplierCode === supplierCode)
-      return {
-        materialCode: m.materialCode,
-        materialName: m.materialName,
-        _appliance: !!app,
-        _packType: app?.packType || '',
-        _packCapacity: app?.packCapacity || 0
-      }
-    })
-  } catch {
-    editCatalogMaterials.value = []
-  }
-}
-
-/** 加载全部物料目录（出库用，无供应商筛选） */
-async function loadAllCatalog() {
-  try {
-    const [matRes, appRes] = await Promise.all([
-      getMaterials({ page: 1, size: 200 }),
-      getAppliances({ page: 1, size: 500 })
-    ])
-    const materials = matRes.records || []
-    const appliances = appRes.records || []
-    outCatalogMaterials.value = materials.map(m => {
-      const app = appliances.find(a => a.materialCode === m.materialCode)
-      return {
-        materialCode: m.materialCode,
-        materialName: m.materialName,
-        _appliance: !!app,
-        _packType: app?.packType || '',
-        _packCapacity: app?.packCapacity || 0
-      }
-    })
-    outEditCatalogMaterials.value = outCatalogMaterials.value
-  } catch {
-    outCatalogMaterials.value = []
-    outEditCatalogMaterials.value = []
-  }
-}
-
-// ==================== 目录选择事件 ====================
-
-function onCatalogSelect(val) { catalogChecked.value = val }
-function onEditCatalogSelect(val) { editCatalogChecked.value = val }
-function onOutCatalogSelect(val) { outCatalogChecked.value = val }
-function onOutEditCatalogSelect(val) { outEditCatalogChecked.value = val }
-
-function catalogSelectable(row) {
-  // 未配置器具的物料不可选
-  if (!row._appliance) return false
-  // 已存在于明细列表的物料不可重复选
-  const exists = inboundForm.details.some(d => d.materialCode === row.materialCode)
-  return !exists
-}
-function editCatalogSelectable(row) {
-  if (!row._appliance) return false
-  const exists = editForm.details.some(d => d.materialCode === row.materialCode)
-  return !exists
-}
-function outCatalogSelectable(row) {
-  if (!row._appliance) return false
-  const exists = outboundForm.details.some(d => d.materialCode === row.materialCode)
-  return !exists
-}
-function outEditCatalogSelectable(row) {
-  if (!row._appliance) return false
-  const exists = outEditForm.details.some(d => d.materialCode === row.materialCode)
-  return !exists
-}
-
-function selectAllCatalog() { catalogTableRef.value?.toggleAllSelection() }
-function invertCatalog() {
-  const table = catalogTableRef.value
-  if (!table) return
-  filteredCatalog.value.forEach(row => {
-    if (catalogSelectable(row)) table.toggleRowSelection(row, !catalogChecked.value.includes(row))
-  })
-}
-function selectAllEditCatalog() { editCatalogTableRef.value?.toggleAllSelection() }
-function invertEditCatalog() {
-  const table = editCatalogTableRef.value
-  if (!table) return
-  filteredEditCatalog.value.forEach(row => {
-    if (editCatalogSelectable(row)) table.toggleRowSelection(row, !editCatalogChecked.value.includes(row))
-  })
-}
-function selectAllOutCatalog() { outCatalogTableRef.value?.toggleAllSelection() }
-function invertOutCatalog() {
-  const table = outCatalogTableRef.value
-  if (!table) return
-  filteredOutCatalog.value.forEach(row => {
-    if (outCatalogSelectable(row)) table.toggleRowSelection(row, !outCatalogChecked.value.includes(row))
-  })
-}
-function selectAllOutEditCatalog() { outEditCatalogTableRef.value?.toggleAllSelection() }
-function invertOutEditCatalog() {
-  const table = outEditCatalogTableRef.value
-  if (!table) return
-  filteredOutEditCatalog.value.forEach(row => {
-    if (outEditCatalogSelectable(row)) table.toggleRowSelection(row, !outEditCatalogChecked.value.includes(row))
-  })
-}
-
-// ==================== 批量添加 ====================
-
-function batchAddToInbound() {
-  for (const row of catalogChecked.value) {
-    if (!row._appliance) continue
-    const exists = inboundForm.details.some(d => d.materialCode === row.materialCode)
-    if (exists) continue
-    // 找到第一个空白行或追加
-    const emptyIdx = inboundForm.details.findIndex(d => !d.materialCode)
-    if (emptyIdx >= 0) {
-      inboundForm.details[emptyIdx] = { materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 }
-    } else {
-      inboundForm.details.push({ materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 })
-    }
-  }
-  catalogTableRef.value?.clearSelection()
-  ElMessage.success(`已添加 ${catalogChecked.value.length} 种物料`)
-}
-
-function batchAddToEditInbound() {
-  for (const row of editCatalogChecked.value) {
-    if (!row._appliance) continue
-    const exists = editForm.details.some(d => d.materialCode === row.materialCode)
-    if (exists) continue
-    const emptyIdx = editForm.details.findIndex(d => !d.materialCode)
-    if (emptyIdx >= 0) {
-      editForm.details[emptyIdx] = { materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 }
-    } else {
-      editForm.details.push({ materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 })
-    }
-  }
-  editCatalogTableRef.value?.clearSelection()
-  ElMessage.success(`已添加 ${editCatalogChecked.value.length} 种物料`)
-}
-
-function batchAddToOutbound() {
-  for (const row of outCatalogChecked.value) {
-    if (!row._appliance) continue
-    const exists = outboundForm.details.some(d => d.materialCode === row.materialCode)
-    if (exists) continue
-    const emptyIdx = outboundForm.details.findIndex(d => !d.materialCode)
-    if (emptyIdx >= 0) {
-      outboundForm.details[emptyIdx] = { materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 }
-    } else {
-      outboundForm.details.push({ materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 })
-    }
-  }
-  outCatalogTableRef.value?.clearSelection()
-  ElMessage.success(`已添加 ${outCatalogChecked.value.length} 种物料`)
-}
-
-function batchAddToOutEdit() {
-  for (const row of outEditCatalogChecked.value) {
-    if (!row._appliance) continue
-    const exists = outEditForm.details.some(d => d.materialCode === row.materialCode)
-    if (exists) continue
-    const emptyIdx = outEditForm.details.findIndex(d => !d.materialCode)
-    if (emptyIdx >= 0) {
-      outEditForm.details[emptyIdx] = { materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 }
-    } else {
-      outEditForm.details.push({ materialCode: row.materialCode, packType: row._packType, packCapacity: row._packCapacity, boxCount: 1 })
-    }
-  }
-  outEditCatalogTableRef.value?.clearSelection()
-  ElMessage.success(`已添加 ${outEditCatalogChecked.value.length} 种物料`)
-}
-
-// ==================== 统一箱数 & 清空 ====================
-
-function applyUniformBoxCount(formType) {
-  const count = {
-    inbound: uniformBoxCount.value,
-    editInbound: editUniformBoxCount.value,
-    outbound: outUniformBoxCount.value,
-    outEdit: outEditUniformBoxCount.value
-  }[formType] || 1
-  const details = {
-    inbound: inboundForm.details,
-    editInbound: editForm.details,
-    outbound: outboundForm.details,
-    outEdit: outEditForm.details
-  }[formType] || []
-  let applied = 0
-  details.forEach(d => { if (d.materialCode) { d.boxCount = count; applied++ } })
-  ElMessage.success(`已将 ${applied} 行箱数统一设为 ${count}`)
-}
-
-function clearAllDetails(formType) {
-  const details = {
-    inbound: inboundForm.details,
-    editInbound: editForm.details,
-    outbound: outboundForm.details,
-    outEdit: outEditForm.details
-  }[formType] || []
-  details.splice(0, details.length, { materialCode: '', packType: '', packCapacity: 0, boxCount: 1 })
-}
-
-/** 计算单行总数 */
-function calcRowTotal(item) {
-  if (!item.materialCode) return '—'
-  return (item.boxCount || 0) * (item.packCapacity || 0) || '—'
-}
-
-// ==================== 对话框打开钩子 ====================
-
-function onCreateDialogOpened() {
-  if (inboundForm.selectedSuppliers.length > 0) {
-    loadMultiSupplierCatalog()
-  }
-}
-
-function onEditDialogOpened() {
-  if (editForm.supplierCode) {
-    loadEditSupplierCatalog(editForm.supplierCode)
-  }
-}
-
-function onOutDialogOpened() {
-  loadAllCatalog()
-}
-
-function onOutEditDialogOpened() {
-  loadAllCatalog()
-}
-
 </script>
 
 <style scoped>
@@ -2290,81 +1573,36 @@ function onOutEditDialogOpened() {
   gap: 4px;
 }
 
-/* ==================== 新建入库单明细编辑器 ==================== */
 .draft-alert {
   margin-bottom: 16px;
 }
-.detail-editor {
-  width: 100%;
-  min-width: 0;
-}
-.detail-head {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) 100px 90px 110px 110px 74px;
-  gap: 8px;
-  margin-bottom: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.detail-head-6 {
-  grid-template-columns: minmax(140px, 1fr) 90px 80px 100px 100px 74px;
-}
-.detail-row {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) 100px 90px 110px 110px 74px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin-bottom: 10px;
-}
-.detail-row-6 {
-  grid-template-columns: minmax(140px, 1fr) 90px 80px 100px 100px 74px;
-}
-.detail-row :deep(.el-input-number) {
+/* 物料摘要面板（抽屉内） */
+.material-summary {
   width: 100%;
 }
-/* 只读单元格：器具类型、单箱容量、总数 */
-.readonly-cell {
-  font-size: 13px;
-  color: var(--text-primary);
-  padding: 4px 8px;
-  background: #f5f7fa;
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
+.summary-empty {
+  padding: 24px;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-height: 32px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  background: #fafafa;
+  border: 1px dashed var(--border-light);
+  border-radius: 4px;
+}
+.summary-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #f0f5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 4px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
-.total-cell {
-  font-weight: 600;
+.summary-footer b {
   color: var(--wms-primary);
-  background: #ecf5ff;
-  border-color: #d9ecff;
-}
-.detail-row :deep(.el-input__wrapper) {
-  min-width: 0;
-}
-.detail-row :deep(.el-button) {
-  display: inline-flex;
-  justify-content: center;
-  gap: 3px;
-  min-width: 0;
-  padding-left: 2px;
-  padding-right: 2px;
-}
-.detail-actions {
-  padding-top: 2px;
-}
-.detail-actions :deep(.el-button) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 /* ==================== 对话框底部 ==================== */
@@ -2594,18 +1832,6 @@ function onOutEditDialogOpened() {
   .summary-stats {
     flex-wrap: wrap;
   }
-  .detail-head, .detail-head-6, .detail-head-7 {
-    display: none;
-  }
-  .detail-row, .detail-row-6, .detail-row-7 {
-    grid-template-columns: 1fr;
-    padding: 10px;
-    border: 1px solid var(--border-light);
-    border-radius: 4px;
-  }
-  .detail-row :deep(.el-button) {
-    justify-content: flex-start;
-  }
   .detail-info-grid {
     grid-template-columns: 1fr;
   }
@@ -2627,106 +1853,6 @@ function onOutEditDialogOpened() {
 .supplier-pick-group :deep(.el-select__wrapper) {
   min-width: 180px;
 }
-.supplier-code-text {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-/* ==================== 物料目录面板 ==================== */
-.catalog-panel {
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.catalog-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #fafafa;
-  border-bottom: 1px solid var(--border-light);
-}
-.catalog-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-left: auto;
-}
-.catalog-scroll {
-  overflow-y: auto;
-}
-.catalog-actions {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-light);
-  background: #fafafa;
-}
-
-/* ==================== 批量工具栏 ==================== */
-.batch-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: #f0f5ff;
-  border: 1px solid #d9ecff;
-  border-radius: 4px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-.batch-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.batch-summary {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-left: auto;
-}
-.batch-summary b {
-  color: var(--wms-primary);
-}
-
-/* ==================== 明细列表区（抽屉自带滚动，此处不设 max-height） ==================== */
-.detail-scroll {
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  padding: 6px;
-}
-
-/* ==================== 序号列 ==================== */
-.col-seq {
-  width: 28px;
-  flex-shrink: 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.seq-num {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-/* 7列网格 */
-.detail-head-7 {
-  grid-template-columns: 28px minmax(120px, 1fr) 80px 80px 100px 100px 56px;
-}
-.detail-row-7 {
-  grid-template-columns: 28px minmax(120px, 1fr) 80px 80px 100px 100px 56px;
-}
-
-/* ==================== 辅助 ==================== */
-.text-warn {
-  color: var(--wms-warning);
-  font-weight: 500;
-}
-
 /* ==================== 出库二维码输入区 ==================== */
 .barcode-tag-area {
   display: flex;

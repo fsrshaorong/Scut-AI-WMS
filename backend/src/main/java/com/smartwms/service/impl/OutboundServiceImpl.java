@@ -1,8 +1,8 @@
 /**
- * 出库服务实现（整箱出库，以箱为最小单位，不做拆零重封装）。
+ * 出库服务实现（支持按箱或按件出库，优先整箱、FIFO 拆零）。
  *
  * @author Focus
- * @date 2026-06-23
+ * @date 2026-06-28
  */
 package com.smartwms.service.impl;
 
@@ -80,11 +80,14 @@ public class OutboundServiceImpl implements OutboundService {
         }
         String supplierCode = material.getSupplierCode();
 
-        Appliance appliance = applianceMapper.selectOne(
+        // 使用 selectList + limit 1 避免重复数据导致 TooManyResultsException
+        List<Appliance> appliances = applianceMapper.selectList(
                 new LambdaQueryWrapper<Appliance>()
                         .eq(Appliance::getMaterialCode, materialCode)
                         .eq(Appliance::getSupplierCode, supplierCode)
+                        .last("LIMIT 1")
         );
+        Appliance appliance = (appliances != null && !appliances.isEmpty()) ? appliances.get(0) : null;
         if (appliance == null || appliance.getPackCapacity() == null || appliance.getPackCapacity() <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "物料 " + materialCode + " 未配置器具包装容量，请先到器具管理页面配置。");
@@ -389,7 +392,12 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 退回已拣库存：通过出库流水找到被拣选的入库二维码，恢复为「在库」。
+     * 退回已拣库存：通过出库流水找到被拣选的入库二维码，恢复为「在库」并退还扣除量。
+     * 兼容整箱全取（待出库→在库，remainingQty 不变）、部分拆箱（在库，remainingQty 加回扣除量）
+     * 和拆分二维码（删除拆分码，原箱恢复）。
+     *
+     * @author Focus
+     * @date 2026-06-28
      */
     private void rollbackPick(Long outboundId) {
         List<OutboundHistory> histories = outboundHistoryMapper.selectList(
@@ -398,18 +406,44 @@ public class OutboundServiceImpl implements OutboundService {
         );
         if (histories.isEmpty()) return;
 
+        // 收集待删除的拆分二维码（含 _S 后缀的为拆箱重装生成）
+        Set<Long> splitBarcodeIdsToDelete = new HashSet<>();
+
         for (OutboundHistory history : histories) {
             if (history.getBarcodeId() == null || history.getBarcodeId() == 0L) continue;
             Barcode inboundBc = barcodeMapper.selectById(history.getBarcodeId());
-            if (inboundBc != null && "inbound".equals(inboundBc.getType()) && "待出库".equals(inboundBc.getStatus())) {
-                inboundBc.setStatus("在库");
-                inboundBc.setRemainingQty(getInboundPackCapacity(inboundBc));
-                barcodeMapper.updateById(inboundBc);
-                // 恢复库存
-                Inventory inv = loadInventory(inboundBc.getMaterialCode());
-                inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + (history.getDeductQty() != null ? history.getDeductQty() : 0));
-                inventoryMapper.updateById(inv);
+            if (inboundBc == null || !"inbound".equals(inboundBc.getType())) continue;
+
+            String status = inboundBc.getStatus();
+            int deductQty = history.getDeductQty() != null ? history.getDeductQty() : 0;
+
+            // 拆分二维码（barcode 含 _S 后缀）：回退时直接删除
+            if (inboundBc.getBarcode() != null && inboundBc.getBarcode().contains("_S")) {
+                splitBarcodeIdsToDelete.add(inboundBc.getId());
+                // 库存由该拆分对应的原箱流水恢复，此处不重复加回
+                continue;
             }
+
+            if ("待出库".equals(status)) {
+                // 全取的箱：恢复为在库，remainingQty 保持原值（拣选时未扣减）
+                inboundBc.setStatus("在库");
+                barcodeMapper.updateById(inboundBc);
+            } else if ("在库".equals(status)) {
+                // 部分拆箱：退还扣除量到 remainingQty
+                int currentRemaining = inboundBc.getRemainingQty() != null ? inboundBc.getRemainingQty() : 0;
+                inboundBc.setRemainingQty(currentRemaining + deductQty);
+                barcodeMapper.updateById(inboundBc);
+            }
+
+            // 恢复库存
+            Inventory inv = loadInventory(inboundBc.getMaterialCode());
+            inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + deductQty);
+            inventoryMapper.updateById(inv);
+        }
+
+        // 删除拆分二维码
+        for (Long splitId : splitBarcodeIdsToDelete) {
+            barcodeMapper.deleteById(splitId);
         }
     }
 
@@ -423,44 +457,59 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 为单条明细执行整箱拣选（核心方法，不拆零）。
+     * 为单条明细执行智能拣选（核心方法，三阶段 FIFO：整箱优先→部分箱补充→拆整箱）。
      *
      * 流程：
      * 1. 查 Appliance 获取出库单箱容量
-     * 2. planQty = boxCount × packCapacity
-     * 3. 按 FIFO 查找该物料所有在库整箱二维码
-     * 4. 选取最早 boxCount 个整箱，标记为已出库
-     * 5. 生成出库标签（每箱一个）
-     * 6. 扣减库存
+     * 2. planQty = 用户指定总件数 或 boxCount × packCapacity
+     * 3. 阶段1 — 按 FIFO 选取整箱（remainingQty == packCapacity）
+     * 4. 阶段2 — 整箱不够时，按 FIFO 从部分箱补充
+     * 5. 阶段3 — 仍不够时，拆最早的一个整箱
+     * 6. 全取的 barcode → "待出库"，部分取的 barcode → 保持"在库"仅扣减 remainingQty
+     * 7. 扣减库存
+     *
+     * @author Focus
+     * @date 2026-06-28
      */
     private void createDetailAndPick(OutboundOrder order, OutboundOrderRequest.OutboundDetailItem item) {
         String materialCode = item.getMaterialCode();
-        int outPackCapacity = getOutPackCapacity(materialCode);
-        int boxCount = item.getBoxCount();
-        int planQty = boxCount * outPackCapacity;
+        int packCapacity = getOutPackCapacity(materialCode);
+
+        // 确定计划总件数：planQty 优先，否则由 boxCount 推算
+        int planQty;
+        if (item.getPlanQty() != null && item.getPlanQty() > 0) {
+            planQty = item.getPlanQty();
+        } else {
+            int boxCount = item.getBoxCount();
+            if (boxCount <= 0) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "物料 " + materialCode + " 的出库箱数或计划件数必须大于 0");
+            }
+            planQty = boxCount * packCapacity;
+        }
 
         OutboundDetail detail = new OutboundDetail();
         detail.setOutboundId(order.getId());
         detail.setOrderNo(order.getOrderNo());
         detail.setMaterialCode(materialCode);
-        detail.setPackCapacity(outPackCapacity);
+        detail.setPackCapacity(packCapacity);
         detail.setPlanQty(planQty);
         detail.setActualQty(0);
         outboundDetailMapper.insert(detail);
-
-        if (boxCount <= 0) return;
 
         // 校验库存是否充足
         Inventory inventory = loadInventory(materialCode);
         int stockQty = inventory.getStockQty() != null ? inventory.getStockQty() : 0;
         if (stockQty < planQty) {
+            int fullBoxes = stockQty / packCapacity;
+            int remainder = stockQty % packCapacity;
             throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
-                    "库存不足：物料 " + materialCode + " 需要 " + planQty + " 件（" + boxCount + " 箱 × " + outPackCapacity + "），当前仅剩 " + stockQty + " 件");
+                    "库存不足：物料 " + materialCode + " 需要 " + planQty + " 件，当前仅剩 " + stockQty
+                    + " 件（≈ " + fullBoxes + " 整箱 + " + remainder + " 件零头）");
         }
 
-        // 按 FIFO 查找该物料所有在库的入库二维码，只选取整箱（remainingQty = 原始 packCapacity）
-        // 跳过封存（FROZEN）状态的二维码
-        List<Barcode> inboundBarcodes = barcodeMapper.selectList(
+        // ============ 阶段1：按 FIFO 加载在库二维码（含整箱和部分箱） ============
+        List<Barcode> allInStock = barcodeMapper.selectList(
                 new LambdaQueryWrapper<Barcode>()
                         .eq(Barcode::getType, "inbound")
                         .eq(Barcode::getMaterialCode, materialCode)
@@ -468,65 +517,201 @@ public class OutboundServiceImpl implements OutboundService {
                         .gt(Barcode::getRemainingQty, 0)
         );
 
-        // 过滤整箱二维码
-        List<Barcode> fullBoxBarcodes = new ArrayList<>();
-        for (Barcode bc : inboundBarcodes) {
+        // 分离整箱和部分箱
+        List<Barcode> fullBoxes = new ArrayList<>();
+        List<Barcode> partialBoxes = new ArrayList<>();
+        for (Barcode bc : allInStock) {
             int expectedFull = getInboundPackCapacity(bc);
             int remaining = bc.getRemainingQty() != null ? bc.getRemainingQty() : 0;
-            if (remaining == expectedFull && expectedFull > 0) {
-                fullBoxBarcodes.add(bc);
+            if (remaining >= expectedFull && expectedFull > 0) {
+                fullBoxes.add(bc);
+            } else if (remaining > 0) {
+                partialBoxes.add(bc);
             }
         }
 
-        // FIFO 排序
+        // 均按 FIFO 排序（入库单创建时间 → 二维码创建时间 → ID）
         Map<Long, InboundOrder> orderCache = new HashMap<>();
-        fullBoxBarcodes.sort(Comparator
+        Comparator<Barcode> fifoComparator = Comparator
                 .comparing((Barcode bc) -> {
                     InboundOrder io = orderCache.computeIfAbsent(bc.getInboundId(), inboundOrderMapper::selectById);
                     return io != null && io.getCreatedAt() != null ? io.getCreatedAt() : LocalDateTime.MAX;
                 })
                 .thenComparing(Barcode::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(Barcode::getId));
+                .thenComparing(Barcode::getId);
 
-        // 校验整箱库存是否足够
-        if (fullBoxBarcodes.size() < boxCount) {
-            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
-                    "整箱库存不足：物料 " + materialCode + " 需要 " + boxCount + " 个整箱，当前仅有 " + fullBoxBarcodes.size() + " 个整箱在库（该物料不允许拆零出库）");
+        fullBoxes.sort(fifoComparator);
+        partialBoxes.sort(fifoComparator);
+
+        int remainingNeeded = planQty;
+        // 记录每个被拣选 barcode 的扣除量
+        Map<Long, Integer> pickMap = new LinkedHashMap<>(); // barcodeId → deductQty
+        Set<Long> fullyConsumedIds = new HashSet<>();       // remainingQty 将归零的 barcode
+
+        // ============ 阶段2：优先整箱选取（减少拆箱） ============
+        for (Barcode bc : fullBoxes) {
+            if (remainingNeeded <= 0) break;
+            int boxQty = bc.getRemainingQty() != null ? bc.getRemainingQty() : 0;
+            if (boxQty <= 0) continue;
+
+            if (remainingNeeded >= boxQty) {
+                // 整箱全取
+                pickMap.put(bc.getId(), boxQty);
+                fullyConsumedIds.add(bc.getId());
+                remainingNeeded -= boxQty;
+            } else {
+                // 从整箱中拆出所需数量（阶段2不会进入此分支，留到阶段4统一处理）
+                // 此处不处理，由阶段4统一拆箱
+                break;
+            }
         }
 
-        // 选取最早 boxCount 个整箱，标记为「待出库」（一码到底，不生成新标签）
-        List<Barcode> selectedBoxes = fullBoxBarcodes.subList(0, boxCount);
-        for (int i = 0; i < selectedBoxes.size(); i++) {
-            Barcode ib = selectedBoxes.get(i);
-            ib.setStatus("待出库");
-            // 暂存出库单ID到二维码（复用 inboundId 字段在 type=inbound 时仍保留原入库单ID，此处用 supplierCode 存出库单标识）
-            // 实际通过 OutboundHistory 表关联即可
-            barcodeMapper.updateById(ib);
+        // ============ 阶段3：部分箱补充（库存利用率最大化） ============
+        if (remainingNeeded > 0) {
+            for (Barcode bc : partialBoxes) {
+                if (remainingNeeded <= 0) break;
+                int boxQty = bc.getRemainingQty() != null ? bc.getRemainingQty() : 0;
+                if (boxQty <= 0) continue;
 
-            // 记录出库流水，关联源入库二维码
-            InboundDetail sourceDetail = inboundDetailMapper.selectOne(
-                    new LambdaQueryWrapper<InboundDetail>()
-                            .eq(InboundDetail::getInboundId, ib.getInboundId())
-                            .eq(InboundDetail::getMaterialCode, materialCode)
-            );
-            InboundOrder sourceOrder = inboundOrderMapper.selectById(ib.getInboundId());
-            OutboundHistory history = new OutboundHistory();
-            history.setOutboundId(order.getId());
-            history.setOutboundOrderNo(order.getOrderNo());
-            history.setOutboundDetailId(detail.getId());
-            history.setMaterialCode(materialCode);
-            history.setInboundId(ib.getInboundId());
-            history.setInboundOrderNo(sourceOrder != null ? sourceOrder.getOrderNo() : "—");
-            history.setInboundDetailId(sourceDetail != null ? sourceDetail.getId() : 0L);
-            history.setBarcodeId(ib.getId()); // 源入库二维码 ID
-            history.setBarcode(ib.getBarcode());
-            history.setDeductQty(outPackCapacity);
-            outboundHistoryMapper.insert(history);
+                int take = Math.min(boxQty, remainingNeeded);
+                pickMap.put(bc.getId(), take);
+                if (take >= boxQty) {
+                    fullyConsumedIds.add(bc.getId());
+                }
+                remainingNeeded -= take;
+            }
+        }
+
+        // ============ 阶段4：拆整箱（最后手段，从 FIFO 最早未动的整箱中拆，生成拆分二维码） ============
+        // 记录拆分信息：原 barcodeId → 拆分出的新 barcode
+        Map<Long, Barcode> splitBarcodeMap = new LinkedHashMap<>();
+        if (remainingNeeded > 0) {
+            for (Barcode bc : fullBoxes) {
+                if (remainingNeeded <= 0) break;
+                if (pickMap.containsKey(bc.getId())) continue; // 已在阶段2全取
+
+                int boxQty = bc.getRemainingQty() != null ? bc.getRemainingQty() : 0;
+                if (boxQty <= remainingNeeded) continue; // 不够拆则跳过
+
+                // 拆出所需数量，为拆出部分生成新的"待出库"二维码
+                int splitQty = remainingNeeded;
+                pickMap.put(bc.getId(), splitQty);
+                // 原箱不归零：扣减后剩余继续在库
+                // 为新拆分出的件数创建独立二维码
+                Barcode splitBc = createSplitBarcode(bc, splitQty, packCapacity, order.getOrderNo());
+                splitBarcodeMap.put(bc.getId(), splitBc);
+                remainingNeeded = 0;
+            }
+        }
+
+        // 理论上不会发生（阶段1已做总量校验），但保留防御性检查
+        if (remainingNeeded > 0) {
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                    "库存不足：物料 " + materialCode + " 缺 " + remainingNeeded + " 件无法满足");
+        }
+
+        // ============ 执行拣选：更新 barcode 状态和 remainingQty ============
+        for (Map.Entry<Long, Integer> entry : pickMap.entrySet()) {
+            Long barcodeId = entry.getKey();
+            int deductQty = entry.getValue();
+
+            Barcode ib = barcodeMapper.selectById(barcodeId);
+            if (ib == null) continue;
+
+            int currentRemaining = ib.getRemainingQty() != null ? ib.getRemainingQty() : 0;
+            Barcode splitBc = splitBarcodeMap.get(barcodeId); // 拆分出的新二维码（阶段4）
+
+            if (splitBc != null) {
+                // ===== 拆箱场景：原箱扣减后留在库，拆分件生成新二维码标记为待出库 =====
+                ib.setRemainingQty(currentRemaining - deductQty);
+                // 原箱保持"在库"状态不变
+                barcodeMapper.updateById(ib);
+
+                // 为拆分件创建出库流水（指向新生成的待出库二维码）
+                createOutboundHistory(order, detail, materialCode, ib, splitBc, deductQty);
+
+                // 同时为原箱创建流水（记录扣减，用于回退时恢复）
+                createOutboundHistory(order, detail, materialCode, ib, ib, deductQty);
+            } else if (fullyConsumedIds.contains(barcodeId)) {
+                // ===== 整箱全取：标记为待出库，remainingQty 保留原值（确认时清零） =====
+                ib.setStatus("待出库");
+                barcodeMapper.updateById(ib);
+                createOutboundHistory(order, detail, materialCode, ib, ib, deductQty);
+            } else {
+                // ===== 部分箱全取：remainingQty 归零，标记为待出库 =====
+                ib.setRemainingQty(0);
+                ib.setStatus("待出库");
+                barcodeMapper.updateById(ib);
+                createOutboundHistory(order, detail, materialCode, ib, ib, deductQty);
+            }
         }
 
         // 扣减库存
         inventory.setStockQty(stockQty - planQty);
         inventoryMapper.updateById(inventory);
+    }
+
+    /**
+     * 从整箱中拆出指定件数，生成新的"待出库"二维码（拆箱重装）。
+     *
+     * @param sourceBox   被拆分的原箱二维码
+     * @param splitQty    拆分出的件数
+     * @param packCapacity 标准箱容量
+     * @param outboundOrderNo 出库单号
+     * @return 新生成的拆分二维码（status=待出库）
+     *
+     * @author Focus
+     * @date 2026-06-28
+     */
+    private Barcode createSplitBarcode(Barcode sourceBox, int splitQty, int packCapacity, String outboundOrderNo) {
+        // 构造唯一的拆分二维码字符串：在原箱号后追加 _S 标识
+        String splitBarcodeStr = sourceBox.getBarcode() + "_S" + System.currentTimeMillis() % 100000;
+        Barcode splitBc = new Barcode();
+        splitBc.setMaterialCode(sourceBox.getMaterialCode());
+        splitBc.setSupplierCode(sourceBox.getSupplierCode());
+        splitBc.setBarcode(splitBarcodeStr);
+        splitBc.setStatus("待出库");
+        splitBc.setInboundId(sourceBox.getInboundId());
+        splitBc.setType("inbound");
+        splitBc.setRemainingQty(splitQty);
+        barcodeMapper.insert(splitBc);
+        return splitBc;
+    }
+
+    /**
+     * 创建出库流水记录。
+     *
+     * @param order     出库单
+     * @param detail    出库明细
+     * @param materialCode 物料号
+     * @param sourceBox 源入库二维码（用于读取入库单信息）
+     * @param targetBc  流水关联的二维码（整箱取时 = sourceBox，拆箱时为拆分二维码）
+     * @param deductQty 本次扣减件数
+     *
+     * @author Focus
+     * @date 2026-06-28
+     */
+    private void createOutboundHistory(OutboundOrder order, OutboundDetail detail,
+                                        String materialCode, Barcode sourceBox,
+                                        Barcode targetBc, int deductQty) {
+        InboundDetail sourceDetail = inboundDetailMapper.selectOne(
+                new LambdaQueryWrapper<InboundDetail>()
+                        .eq(InboundDetail::getInboundId, sourceBox.getInboundId())
+                        .eq(InboundDetail::getMaterialCode, materialCode)
+        );
+        InboundOrder sourceOrder = inboundOrderMapper.selectById(sourceBox.getInboundId());
+        OutboundHistory history = new OutboundHistory();
+        history.setOutboundId(order.getId());
+        history.setOutboundOrderNo(order.getOrderNo());
+        history.setOutboundDetailId(detail.getId());
+        history.setMaterialCode(materialCode);
+        history.setInboundId(sourceBox.getInboundId());
+        history.setInboundOrderNo(sourceOrder != null ? sourceOrder.getOrderNo() : "—");
+        history.setInboundDetailId(sourceDetail != null ? sourceDetail.getId() : 0L);
+        history.setBarcodeId(targetBc.getId());
+        history.setBarcode(targetBc.getBarcode());
+        history.setDeductQty(deductQty);
+        outboundHistoryMapper.insert(history);
     }
 
     /**

@@ -57,11 +57,11 @@
         <el-table-column prop="outboundOrderNo" label="出库单号" width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.outboundOrderNo || '—' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
-            <span class="badge" :class="statusBadgeClass(row.status)">
+            <el-tag :type="statusTagType(row.status)" effect="light" size="small" disable-transitions>
               {{ row.status }}
-            </span>
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="箱容量" width="80" align="right">
@@ -163,12 +163,16 @@ async function doQuery() {
   }
 }
 
-function statusBadgeClass(status) {
-  if (status === '在库') return 'badge-success'
-  if (status === '已出库') return 'badge-default'
-  if (status === '待出库') return 'badge-info'
-  if (status === 'FROZEN' || status === '封存') return 'badge-danger'
-  return 'badge-warn'
+/**
+ * 将二维码状态映射为 Element Plus el-tag 的 type 属性。
+ * 五种状态对应五个语义色：待入库=warning 待出库=primary 在库=success 已出库=info 封存=danger
+ */
+function statusTagType(status) {
+  if (status === '在库') return 'success'
+  if (status === '待出库') return 'primary'
+  if (status === '已出库') return 'info'
+  if (status === 'FROZEN' || status === '封存') return 'danger'
+  return 'warning' // 待入库 和其他未知状态
 }
 
 /**
@@ -215,18 +219,6 @@ function doExport() {
   color: var(--text-secondary);
   margin-left: auto;
 }
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.badge-success { background: #f0f9eb; color: #67c23a; }
-.badge-warn    { background: #fdf6ec; color: #e6a23c; }
-.badge-info    { background: #ecf5ff; color: #409eff; }
-.badge-danger  { background: #fef0f0; color: #f56c6c; }
-.badge-default { background: #f4f4f5; color: #909399; }
 .trace-barcode-cell {
   display: flex;
   flex-direction: column;
