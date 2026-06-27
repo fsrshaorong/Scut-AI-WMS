@@ -559,9 +559,9 @@
       <el-dialog v-model="inboundFlowVisible" title="入库流水查询"
         width="min(900px, calc(100vw - 32px))" destroy-on-close>
         <div class="toolbar" style="margin-bottom: 12px">
-          <el-input v-model="inboundFlowQuery.orderNo" placeholder="入库单号（模糊）" clearable
+          <el-input v-model="inboundFlowOrderNo" placeholder="入库单号（模糊）" clearable
             size="small" style="width: 180px" @keyup.enter="loadInboundFlow" />
-          <el-select v-model="inboundFlowQuery.materialCode" placeholder="物料号"
+          <el-select v-model="inboundFlowMaterial" placeholder="物料号"
             size="small" filterable remote clearable style="width: 180px"
             :remote-method="(q) => searchFlowMaterials(q, 'inbound')"
             :loading="flowMaterialLoading.inbound"
@@ -602,9 +602,9 @@
       <el-dialog v-model="historyVisible" title="出库批次流水查询"
         width="min(900px, calc(100vw - 32px))" destroy-on-close>
         <div class="toolbar" style="margin-bottom: 12px">
-          <el-input v-model="historyQuery.orderNo" placeholder="出库单号（模糊）" clearable
+          <el-input v-model="historyOrderNo" placeholder="出库单号（模糊）" clearable
             size="small" style="width: 180px" @keyup.enter="loadHistories" />
-          <el-select v-model="historyQuery.materialCode" placeholder="物料号"
+          <el-select v-model="historyMaterial" placeholder="物料号"
             size="small" filterable remote clearable style="width: 180px"
             :remote-method="(q) => searchFlowMaterials(q, 'outbound')"
             :loading="flowMaterialLoading.outbound"
@@ -1518,13 +1518,14 @@ async function searchFlowMaterials(query, type) {
 const inboundFlowVisible = ref(false)
 const inboundFlowLoading = ref(false)
 const inboundFlowList = ref([])
-const inboundFlowQuery = reactive({ orderNo: '', materialCode: '' })
+const inboundFlowOrderNo = ref('')
+const inboundFlowMaterial = ref('')
 // 缓存 inboundId → orderNo 映射
 const inboundOrderNoMap = ref({})
 
 function openInboundFlowDialog() {
-  inboundFlowQuery.orderNo = ''
-  inboundFlowQuery.materialCode = ''
+  inboundFlowOrderNo.value = ''
+  inboundFlowMaterial.value = ''
   inboundFlowList.value = []
   inboundFlowVisible.value = true
 }
@@ -1533,8 +1534,10 @@ async function loadInboundFlow() {
   inboundFlowLoading.value = true
   try {
     const params = { page: 1, size: 200 }
-    if (inboundFlowQuery.orderNo?.trim()) params.orderNo = inboundFlowQuery.orderNo.trim()
-    if (inboundFlowQuery.materialCode?.trim()) params.materialCode = inboundFlowQuery.materialCode.trim()
+    const on = inboundFlowOrderNo.value?.trim()
+    const mc = inboundFlowMaterial.value?.trim()
+    if (on) params.orderNo = on
+    if (mc) params.materialCode = mc
     const data = await getInboundFlow(params)
     inboundFlowList.value = data.records || []
     // 构建 inboundId → 单号缓存
@@ -1547,8 +1550,9 @@ async function loadInboundFlow() {
         } catch { inboundOrderNoMap.value[id] = '—' }
       }
     }
-  } catch {
+  } catch (err) {
     inboundFlowList.value = []
+    ElMessage.error('查询失败: ' + (err?.message || '未知错误'))
   } finally {
     inboundFlowLoading.value = false
   }
@@ -1562,11 +1566,12 @@ function getInboundOrderNo(inboundId) {
 const historyVisible = ref(false)
 const historyLoading = ref(false)
 const historyList = ref([])
-const historyQuery = reactive({ orderNo: '', materialCode: '' })
+const historyOrderNo = ref('')
+const historyMaterial = ref('')
 
 function openHistoryDialog() {
-  historyQuery.orderNo = ''
-  historyQuery.materialCode = ''
+  historyOrderNo.value = ''
+  historyMaterial.value = ''
   historyList.value = []
   historyVisible.value = true
 }
@@ -1575,12 +1580,15 @@ async function loadHistories() {
   historyLoading.value = true
   try {
     const params = { page: 1, size: 50 }
-    if (historyQuery.orderNo?.trim()) params.orderNo = historyQuery.orderNo.trim()
-    if (historyQuery.materialCode?.trim()) params.materialCode = historyQuery.materialCode.trim()
+    const on = historyOrderNo.value?.trim()
+    const mc = historyMaterial.value?.trim()
+    if (on) params.orderNo = on
+    if (mc) params.materialCode = mc
     const data = await getOutboundHistories(params)
     historyList.value = data.records || []
-  } catch {
+  } catch (err) {
     historyList.value = []
+    ElMessage.error('查询失败: ' + (err?.message || '未知错误'))
   } finally {
     historyLoading.value = false
   }
