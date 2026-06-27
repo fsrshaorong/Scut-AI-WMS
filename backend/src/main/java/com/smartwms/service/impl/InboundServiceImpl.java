@@ -176,8 +176,8 @@ public class InboundServiceImpl implements InboundService {
                         : packCapacity;
                 if (boxQty <= 0) boxQty = packCapacity; // 整除时末箱也是整箱
 
-                String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode, planQty,
-                        packCapacity, boxQty, i + 1, orderNo);
+                String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode,
+                        planQty, packCapacity, boxQty, i + 1);
                 Barcode barcode = new Barcode();
                 barcode.setMaterialCode(item.getMaterialCode());
                 barcode.setSupplierCode(supplierCode);
@@ -364,8 +364,8 @@ public class InboundServiceImpl implements InboundService {
                         : packCapacity;
                 if (boxQty <= 0) boxQty = packCapacity;
 
-                String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode, planQty,
-                        packCapacity, boxQty, i + 1, orderNo);
+                String barcodeStr = buildBarcode(item.getMaterialCode(), supplierCode,
+                        planQty, packCapacity, boxQty, i + 1);
                 Barcode barcode = new Barcode();
                 barcode.setMaterialCode(item.getMaterialCode());
                 barcode.setSupplierCode(supplierCode);
@@ -503,8 +503,8 @@ public class InboundServiceImpl implements InboundService {
     /**
      * 从未知二维码中解析入库数据并自动创建入库单和二维码记录。
      *
-     * 新格式（推荐）：WMS|物料|供应商|计划数|箱容量|实收数|箱号
-     * 旧格式（兼容）：以 "-" 分隔的旧式二维码，提取物料号后使用默认值
+     * 标准格式（7段）：WMS|物料号|供应商|计划总数|箱容量|箱内件数|箱序号
+     * 兼容旧格式：段数不足时回退提取物料号
      */
     private Barcode createBarcodeFromScan(String barcodeStr) {
         String materialCode;
@@ -513,18 +513,21 @@ public class InboundServiceImpl implements InboundService {
         int packCapacity;
         int actualQtyFromBarcode;
 
-        // 尝试解析新格式 WMS|...|...
         if (barcodeStr.startsWith("WMS|")) {
             String[] parts = barcodeStr.split("\\|");
             if (parts.length >= 6) {
                 materialCode = parts[1];
                 supplierCode = parts[2];
-                planQty = parseIntSafe(parts[3], 1);
-                packCapacity = parseIntSafe(parts[4], 1);
-                actualQtyFromBarcode = parseIntSafe(parts[5], packCapacity);
+                // 兼容 7/8 段：段3=计划总数(可忽略)，段4=箱容量，段5=箱内件数
+                int seg3 = parseIntSafe(parts[3], 1);
+                int seg4 = parseIntSafe(parts[4], 1);
+                int seg5 = parseIntSafe(parts[5], seg4);
+                packCapacity = seg4;
+                actualQtyFromBarcode = seg5;
+                planQty = seg3;  // 可能为 planQty（7段）或 stockQty（旧格式）
             } else {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "二维码格式错误（WMS|物料|供应商|计划数|箱容量|实收数|箱号），当前仅有 " + parts.length + " 个字段");
+                        "二维码格式错误（需至少6段），当前仅有 " + parts.length + " 段");
             }
         } else {
             // 兼容旧格式：从字符串中提取物料号，使用默认值
@@ -625,8 +628,11 @@ public class InboundServiceImpl implements InboundService {
     }
 
     /**
-     * 构建统一编码规则的看板号。
-     * 格式：WMS|物料|供应商|计划数|箱容量|实收数|箱号（7段，竖线分隔）
+     * 构建看板号——箱子身份证，全生命周期唯一，仅含箱子本身信息。
+     *
+     * 格式（7段）：WMS|物料号|供应商|计划总数|箱容量|箱内件数|箱序号
+     * 示例：WMS|M_PART_001|SUP_VWG_09|200|20|20|3
+     *   → 第3箱，计划200件，箱容量20，本箱实收20件
      *
      * @author Focus
      * @date 2026-06-28
@@ -636,16 +642,14 @@ public class InboundServiceImpl implements InboundService {
                                 int planQty,
                                 int packCapacity,
                                 int actualQty,
-                                int boxNo,
-                                String orderNo) {
-        return String.format("WMS|%s|%s|%d|%d|%d|%d|%s",
+                                int boxNo) {
+        return String.format("WMS|%s|%s|%d|%d|%d|%d",
                 materialCode,
                 supplierCode,
                 planQty,
                 packCapacity,
                 actualQty,
-                boxNo,
-                orderNo);
+                boxNo);
     }
 
     private int parseIntSafe(String s, int defaultVal) {

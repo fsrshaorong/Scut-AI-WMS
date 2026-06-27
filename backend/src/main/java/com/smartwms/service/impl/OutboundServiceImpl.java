@@ -687,8 +687,19 @@ public class OutboundServiceImpl implements OutboundService {
      * @date 2026-06-28
      */
     private Barcode createSplitBarcode(Barcode sourceBox, int splitQty, int packCapacity, String outboundOrderNo) {
-        // 构造唯一的拆分二维码字符串：在原箱号后追加 _S 标识
-        String splitBarcodeStr = sourceBox.getBarcode() + "_S" + System.currentTimeMillis() % 100000;
+        // 解析原箱二维码，构造拆分箱的新二维码（7段格式，S标记防重复）
+        // 格式：WMS|物料|供应商|splitQty|packCapacity|splitQty|来源箱序号_S时间戳
+        String sourceBarcode = sourceBox.getBarcode();
+        String[] srcParts = sourceBarcode.split("\\|");
+        String srcBoxSeq = srcParts.length >= 7 ? srcParts[6] : "0";
+        String splitBarcodeStr = String.format("WMS|%s|%s|%d|%d|%d|%s_S%d",
+                sourceBox.getMaterialCode(),
+                sourceBox.getSupplierCode(),
+                splitQty,
+                packCapacity,
+                splitQty,
+                srcBoxSeq,
+                System.currentTimeMillis() % 100000);
         Barcode splitBc = new Barcode();
         splitBc.setMaterialCode(sourceBox.getMaterialCode());
         splitBc.setSupplierCode(sourceBox.getSupplierCode());
