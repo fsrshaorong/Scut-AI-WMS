@@ -565,7 +565,8 @@
             size="small" filterable remote clearable style="width: 180px"
             :remote-method="(q) => searchFlowMaterials(q, 'inbound')"
             :loading="flowMaterialLoading.inbound"
-            @focus="searchFlowMaterials('', 'inbound')">
+            @focus="searchFlowMaterials('', 'inbound')"
+            @change="loadInboundFlow">
             <el-option v-for="m in flowMaterialOptions.inbound" :key="m.materialCode"
               :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
           </el-select>
@@ -607,7 +608,8 @@
             size="small" filterable remote clearable style="width: 180px"
             :remote-method="(q) => searchFlowMaterials(q, 'outbound')"
             :loading="flowMaterialLoading.outbound"
-            @focus="searchFlowMaterials('', 'outbound')">
+            @focus="searchFlowMaterials('', 'outbound')"
+            @change="loadHistories">
             <el-option v-for="m in flowMaterialOptions.outbound" :key="m.materialCode"
               :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
           </el-select>
