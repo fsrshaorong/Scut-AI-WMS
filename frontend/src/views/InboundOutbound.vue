@@ -646,8 +646,14 @@
         <div class="toolbar" style="margin-bottom: 12px">
           <el-input v-model="inboundFlowQuery.orderNo" placeholder="入库单号（模糊）" clearable
             size="small" style="width: 180px" @keyup.enter="loadInboundFlow" />
-          <el-input v-model="inboundFlowQuery.materialCode" placeholder="物料号" clearable
-            size="small" style="width: 140px" @keyup.enter="loadInboundFlow" />
+          <el-select v-model="inboundFlowQuery.materialCode" placeholder="物料号"
+            size="small" filterable remote clearable style="width: 180px"
+            :remote-method="(q) => searchFlowMaterials(q, 'inbound')"
+            :loading="flowMaterialLoading.inbound"
+            @focus="searchFlowMaterials('', 'inbound')">
+            <el-option v-for="m in flowMaterialOptions.inbound" :key="m.materialCode"
+              :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
+          </el-select>
           <el-button type="primary" size="small" @click="loadInboundFlow">查询</el-button>
         </div>
         <el-table :data="inboundFlowList" stripe size="small" v-loading="inboundFlowLoading"
@@ -682,8 +688,14 @@
         <div class="toolbar" style="margin-bottom: 12px">
           <el-input v-model="historyQuery.orderNo" placeholder="出库单号（模糊）" clearable
             size="small" style="width: 180px" @keyup.enter="loadHistories" />
-          <el-input v-model="historyQuery.materialCode" placeholder="物料号" clearable
-            size="small" style="width: 140px" @keyup.enter="loadHistories" />
+          <el-select v-model="historyQuery.materialCode" placeholder="物料号"
+            size="small" filterable remote clearable style="width: 180px"
+            :remote-method="(q) => searchFlowMaterials(q, 'outbound')"
+            :loading="flowMaterialLoading.outbound"
+            @focus="searchFlowMaterials('', 'outbound')">
+            <el-option v-for="m in flowMaterialOptions.outbound" :key="m.materialCode"
+              :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
+          </el-select>
           <el-button type="primary" size="small" @click="loadHistories">查询</el-button>
         </div>
         <el-table :data="historyList" stripe size="small" v-loading="historyLoading"
@@ -1473,6 +1485,23 @@ async function openOutDetailDialog(row) {
     outDetailData.value = await getOutboundDetail(row.id)
   } catch {
     outDetailVisible.value = false
+  }
+}
+
+// ==================== 流水查询 — 物料下拉搜索 ====================
+const flowMaterialOptions = reactive({ inbound: [], outbound: [] })
+const flowMaterialLoading = reactive({ inbound: false, outbound: false })
+
+/** 流水查询弹窗中远程搜索物料下拉选项 */
+async function searchFlowMaterials(query, type) {
+  flowMaterialLoading[type] = true
+  try {
+    const data = await getMaterials({ page: 1, size: 20, keyword: query || undefined })
+    flowMaterialOptions[type] = data.records || []
+  } catch {
+    flowMaterialOptions[type] = []
+  } finally {
+    flowMaterialLoading[type] = false
   }
 }
 
