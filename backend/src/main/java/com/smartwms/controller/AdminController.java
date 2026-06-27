@@ -11,6 +11,7 @@ import com.smartwms.common.Result;
 import com.smartwms.entity.Barcode;
 import com.smartwms.entity.InboundDetail;
 import com.smartwms.entity.InboundOrder;
+import com.smartwms.entity.Inventory;
 import com.smartwms.entity.InventoryFreeze;
 import com.smartwms.entity.OutboundDetail;
 import com.smartwms.entity.OutboundHistory;
@@ -18,6 +19,7 @@ import com.smartwms.entity.OutboundOrder;
 import com.smartwms.mapper.BarcodeMapper;
 import com.smartwms.mapper.InboundDetailMapper;
 import com.smartwms.mapper.InboundOrderMapper;
+import com.smartwms.mapper.InventoryMapper;
 import com.smartwms.mapper.InventoryFreezeMapper;
 import com.smartwms.mapper.OutboundDetailMapper;
 import com.smartwms.mapper.OutboundHistoryMapper;
@@ -43,6 +45,7 @@ public class AdminController {
     private final InventoryFreezeMapper inventoryFreezeMapper;
     private final InboundDetailMapper inboundDetailMapper;
     private final InboundOrderMapper inboundOrderMapper;
+    private final InventoryMapper inventoryMapper;
 
     public AdminController(BarcodeMapper barcodeMapper,
                            OutboundHistoryMapper outboundHistoryMapper,
@@ -50,7 +53,8 @@ public class AdminController {
                            OutboundOrderMapper outboundOrderMapper,
                            InventoryFreezeMapper inventoryFreezeMapper,
                            InboundDetailMapper inboundDetailMapper,
-                           InboundOrderMapper inboundOrderMapper) {
+                           InboundOrderMapper inboundOrderMapper,
+                           InventoryMapper inventoryMapper) {
         this.barcodeMapper = barcodeMapper;
         this.outboundHistoryMapper = outboundHistoryMapper;
         this.outboundDetailMapper = outboundDetailMapper;
@@ -58,6 +62,7 @@ public class AdminController {
         this.inventoryFreezeMapper = inventoryFreezeMapper;
         this.inboundDetailMapper = inboundDetailMapper;
         this.inboundOrderMapper = inboundOrderMapper;
+        this.inventoryMapper = inventoryMapper;
     }
 
     /**
@@ -266,6 +271,35 @@ public class AdminController {
         }
         Map<String, Object> result = Map.of("message", "标准化完成", "fixedCount", fixed);
         log.info("[管理标准化] 修复箱序号前导零: {} 条", fixed);
+        return Result.success(result);
+    }
+
+    /**
+     * 重算库存：将每个物料的 stockQty 设为该物料所有"在库"条码 remainingQty 之和。
+     * PUT /api/admin/recalc-inventory
+     */
+    @PutMapping("/recalc-inventory")
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Map<String, Object>> recalcInventory() {
+        List<Inventory> inventories = inventoryMapper.selectList(null);
+        int fixed = 0;
+        for (Inventory inv : inventories) {
+            List<Barcode> inStockBarcodes = barcodeMapper.selectList(
+                new LambdaQueryWrapper<Barcode>()
+                    .eq(Barcode::getMaterialCode, inv.getMaterialCode())
+                    .eq(Barcode::getStatus, "在库")
+            );
+            int calculated = inStockBarcodes.stream()
+                .mapToInt(bc -> bc.getRemainingQty() != null ? bc.getRemainingQty() : 0)
+                .sum();
+            if (inv.getStockQty() == null || inv.getStockQty() != calculated) {
+                inv.setStockQty(calculated);
+                inventoryMapper.updateById(inv);
+                fixed++;
+            }
+        }
+        Map<String, Object> result = Map.of("message", "库存重算完成", "fixedMaterials", fixed);
+        log.info("[管理重算] 修复库存差异: {} 种物料", fixed);
         return Result.success(result);
     }
 }

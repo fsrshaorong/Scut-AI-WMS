@@ -702,9 +702,7 @@ public class OutboundServiceImpl implements OutboundService {
             }
         }
 
-        // 扣减库存
-        inventory.setStockQty(stockQty - planQty);
-        inventoryMapper.updateById(inventory);
+        // 库存暂不扣减，待确认出库时再扣（避免双重扣减）
     }
 
     /**
