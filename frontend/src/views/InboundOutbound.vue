@@ -557,7 +557,7 @@
     <!-- 入库流水查询对话框 -->
     <Teleport to="body">
       <el-dialog v-model="inboundFlowVisible" title="入库流水查询"
-        width="min(900px, calc(100vw - 32px))" @opened="loadInboundFlow">
+        width="min(900px, calc(100vw - 32px))" @opened="()=>{loadInboundFlow()}">
         <div class="toolbar" style="margin-bottom: 12px">
           <el-input v-model="inboundFlowOrderNo" placeholder="入库单号（模糊）" clearable
             size="small" style="width: 180px" @keyup.enter="loadInboundFlow" />
@@ -566,11 +566,11 @@
             :remote-method="(q) => searchFlowMaterials(q, 'inbound')"
             :loading="flowMaterialLoading.inbound"
             @focus="searchFlowMaterials('', 'inbound')"
-            @change="loadInboundFlow">
+            @change="()=>{loadInboundFlow()}">
             <el-option v-for="m in flowMaterialOptions.inbound" :key="m.materialCode"
               :label="`${m.materialCode} — ${m.materialName}`" :value="m.materialCode" />
           </el-select>
-          <el-button type="primary" size="small" @click="loadInboundFlow">查询</el-button>
+          <el-button type="primary" size="small" @click="()=>{ElMessage.success('按钮响应正常!')}">查询</el-button>
         </div>
         <el-table :data="inboundFlowList" stripe size="small" v-loading="inboundFlowLoading"
           empty-text="暂无入库流水记录">
