@@ -362,13 +362,15 @@ function batchAddToDetails() {
     const emptyIdx = props.details.findIndex(d => !d.materialCode)
     if (emptyIdx >= 0) {
       props.details[emptyIdx] = {
-        materialCode: row.materialCode, packType: row._packType,
-        packCapacity: row._packCapacity, boxCount: 1, planQty: row._packCapacity
+        materialCode: row.materialCode, supplierCode: row._supplierCode || '',
+        packType: row._packType, packCapacity: row._packCapacity,
+        boxCount: 1, planQty: row._packCapacity
       }
     } else {
       props.details.push({
-        materialCode: row.materialCode, packType: row._packType,
-        packCapacity: row._packCapacity, boxCount: 1, planQty: row._packCapacity
+        materialCode: row.materialCode, supplierCode: row._supplierCode || '',
+        packType: row._packType, packCapacity: row._packCapacity,
+        boxCount: 1, planQty: row._packCapacity
       })
     }
     addedCount++
@@ -385,7 +387,7 @@ function batchAddToDetails() {
 
 // ==================== 明细行编辑操作 ====================
 function addDetailRow() {
-  props.details.push({ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 })
+  props.details.push({ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 })
 }
 function removeDetailRow(idx) {
   if (props.details.length > 1) props.details.splice(idx, 1)
@@ -401,7 +403,7 @@ function applyUniformBoxCount() {
 }
 
 function clearAllDetails() {
-  props.details.splice(0, props.details.length, { materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 })
+  props.details.splice(0, props.details.length, { materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 })
 }
 
 // ==================== 箱数↔件数双向联动 ====================

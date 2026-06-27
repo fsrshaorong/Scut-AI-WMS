@@ -763,7 +763,7 @@ const isAiDraft = ref(false)
 
 const inboundForm = reactive({
   selectedSuppliers: [],
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  details: [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 const inboundRules = {
   supplierCode: [{ required: true, message: '请选择供应商', trigger: 'change' }]
@@ -776,7 +776,7 @@ const editTarget = ref(null)
 const editSubmitting = ref(false)
 const editForm = reactive({
   supplierCode: '',
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  details: [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 
 // ==================== 确认入库 ====================
@@ -1013,7 +1013,7 @@ function openInboundDialog() {
   isAiDraft.value = false
   inboundForm.selectedSuppliers = []
   pendingSuppliers.value = []
-  inboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  inboundForm.details = [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
   dialogVisible.value = true
 }
 
@@ -1088,7 +1088,7 @@ async function handleCreate() {
   try {
     await createInbound({
       supplierCode: inboundForm.selectedSuppliers[0],
-      details: inboundForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
+      details: inboundForm.details.map(d => ({ materialCode: d.materialCode, supplierCode: d.supplierCode || '', boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
     })
     // 后台异步刷新 AI 报告，确保建议反映最新库存
     for (const d of inboundForm.details) {
@@ -1198,7 +1198,7 @@ async function handleEditSubmit() {
   try {
     await updateInbound(editTarget.value.id, {
       supplierCode: editForm.supplierCode,
-      details: editForm.details.map(d => ({ materialCode: d.materialCode, boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
+      details: editForm.details.map(d => ({ materialCode: d.materialCode, supplierCode: d.supplierCode || '', boxCount: d.boxCount, planQty: d.planQty || (d.boxCount * d.packCapacity) }))
     })
     ElMessage.success('入库单修改成功')
     editVisible.value = false
@@ -1350,11 +1350,11 @@ const outDialogVisible = ref(false)
 const outFormRef = ref(null)
 
 const outboundForm = reactive({
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  details: [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 
 function openOutboundDialog() {
-  outboundForm.details = [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  outboundForm.details = [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
   outDialogVisible.value = true
 }
 
@@ -1384,7 +1384,7 @@ const outEditFormRef = ref(null)
 const outEditTarget = ref(null)
 const outEditSubmitting = ref(false)
 const outEditForm = reactive({
-  details: [{ materialCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
+  details: [{ materialCode: '', supplierCode: '', packType: '', packCapacity: 0, boxCount: 1, planQty: 0 }]
 })
 
 async function openOutEditDialog(row) {

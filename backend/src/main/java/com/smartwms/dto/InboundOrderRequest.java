@@ -39,6 +39,9 @@ public class InboundOrderRequest {
         @NotBlank(message = "物料号不能为空")
         private String materialCode;
 
+        /** 物料所属供应商编码。不传则自动从物料主数据查询 */
+        private String supplierCode;
+
         @Min(value = 1, message = "入库箱数必须大于 0")
         private Integer boxCount;
 
@@ -48,6 +51,9 @@ public class InboundOrderRequest {
 
         public String getMaterialCode() { return materialCode; }
         public void setMaterialCode(String materialCode) { this.materialCode = materialCode; }
+
+        public String getSupplierCode() { return supplierCode; }
+        public void setSupplierCode(String supplierCode) { this.supplierCode = supplierCode; }
 
         public Integer getBoxCount() { return boxCount; }
         public void setBoxCount(Integer boxCount) { this.boxCount = boxCount; }
