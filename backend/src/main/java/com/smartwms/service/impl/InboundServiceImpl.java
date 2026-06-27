@@ -503,7 +503,7 @@ public class InboundServiceImpl implements InboundService {
     }
 
     @Override
-    public InventoryTraceVO trace(String materialCode, String barcode, String orderNo) {
+    public InventoryTraceVO trace(String materialCode, String barcode, String orderNo, int page, int size) {
         boolean hasMaterial = materialCode != null && !materialCode.isEmpty();
         boolean hasBarcode = barcode != null && !barcode.isEmpty();
         boolean hasOrderNo = orderNo != null && !orderNo.isEmpty();
@@ -530,11 +530,10 @@ public class InboundServiceImpl implements InboundService {
         if (hasBarcode) wrapper.eq(Barcode::getBarcode, barcode);
         if (inboundIds != null) wrapper.in(Barcode::getInboundId, inboundIds);
         wrapper.orderByDesc(Barcode::getCreatedAt);
-        if (!hasMaterial && !hasBarcode && inboundIds == null) {
-            wrapper.last("LIMIT 200");
-        }
 
-        List<Barcode> barcodes = barcodeMapper.selectList(wrapper);
+        Page<Barcode> barcodePage = new Page<>(page, size);
+        barcodePage = barcodeMapper.selectPage(barcodePage, wrapper);
+        List<Barcode> barcodes = barcodePage.getRecords();
         List<InventoryTraceVO.TraceItem> items = new ArrayList<>();
         for (Barcode bc : barcodes) {
             InboundDetail detail = null;
@@ -554,7 +553,7 @@ public class InboundServiceImpl implements InboundService {
             items.add(InventoryTraceVO.TraceItem.from(bc, detail, outboundHistory));
         }
 
-        return InventoryTraceVO.of(items);
+        return InventoryTraceVO.of(items, barcodePage.getTotal());
     }
 
     // ==================== 扫码入库辅助方法 ====================

@@ -23,7 +23,7 @@
         <el-button type="primary" size="small" :loading="loading" @click="doQuery">
           查询
         </el-button>
-        <span class="toolbar-tip">{{ traceData.length > 0 ? `共 ${traceData.length} 条追溯记录` : '点击查询或直接回车查看全部' }}</span>
+        <span class="toolbar-tip">共 {{ traceTotal }} 条，第 {{ (tracePage-1)*tracePageSize+1 }}-{{ Math.min(tracePage*tracePageSize, traceTotal) }} 条</span>
       </div>
       <!-- 状态统计 -->
       <div v-if="traceData.length" class="stat-row" style="margin-bottom: 16px">
@@ -81,6 +81,11 @@
         </el-table-column>
         <el-table-column prop="barcodeUpdatedAt" label="最后更新" width="170" show-overflow-tooltip />
       </el-table>
+      <div v-if="traceTotal > tracePageSize" style="margin-top:12px;display:flex;justify-content:center">
+        <el-pagination v-model:current-page="tracePage" v-model:page-size="tracePageSize"
+          :page-sizes="[20,50,100]" :total="traceTotal" layout="total,sizes,prev,pager,next"
+          small @current-change="doQuery" @size-change="doQuery" />
+      </div>
     </div>
   </div>
 </template>
@@ -100,6 +105,9 @@ const allMaterials = ref([])
 const materialOptions = ref([])
 const loading = ref(false)
 const traceData = ref([])
+const traceTotal = ref(0)
+const tracePage = ref(1)
+const tracePageSize = ref(20)
 const selectedRows = ref([])
 
 const query = reactive({
@@ -144,12 +152,18 @@ function filterMaterial(query) {
 async function doQuery() {
   loading.value = true
   try {
+    const hasMaterial = query.materialCode?.trim()
+    const hasBarcode = query.barcode?.trim()
+    const hasOrderNo = query.orderNo?.trim()
     const data = await getInventoryTrace({
       materialCode: hasMaterial || undefined,
       barcode: hasBarcode || undefined,
-      orderNo: hasOrderNo || undefined
+      orderNo: hasOrderNo || undefined,
+      page: tracePage.value,
+      size: tracePageSize.value
     })
     traceData.value = data.items || []
+    traceTotal.value = data.totalCount || 0
   } catch {
     traceData.value = []
     ElMessage.error('追溯查询失败')

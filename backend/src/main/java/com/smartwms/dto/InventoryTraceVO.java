@@ -20,9 +20,12 @@ public class InventoryTraceVO {
     private int totalCount;
 
     public static InventoryTraceVO of(List<TraceItem> items) {
+        return of(items, items != null ? items.size() : 0);
+    }
+    public static InventoryTraceVO of(List<TraceItem> items, long totalCount) {
         InventoryTraceVO vo = new InventoryTraceVO();
         vo.setItems(items != null ? items : new ArrayList<>());
-        vo.setTotalCount(items != null ? items.size() : 0);
+        vo.setTotalCount((int) totalCount);
         return vo;
     }
 

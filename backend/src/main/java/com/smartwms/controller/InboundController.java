@@ -114,8 +114,10 @@ public class InboundController {
     public Result<InventoryTraceVO> trace(
             @RequestParam(required = false) String materialCode,
             @RequestParam(required = false) String barcode,
-            @RequestParam(required = false) String orderNo) {
-        return Result.success(inboundService.trace(materialCode, barcode, orderNo));
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return Result.success(inboundService.trace(materialCode, barcode, orderNo, page, size));
     }
 
     /**

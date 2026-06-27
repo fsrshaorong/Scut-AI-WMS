@@ -65,5 +65,5 @@ public interface InboundService {
     /**
      * 库存追溯：按物料/二维码/入库单号查询二维码生命周期轨迹。
      */
-    InventoryTraceVO trace(String materialCode, String barcode, String orderNo);
+    InventoryTraceVO trace(String materialCode, String barcode, String orderNo, int page, int size);
 }
