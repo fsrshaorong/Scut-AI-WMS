@@ -507,11 +507,8 @@ public class InboundServiceImpl implements InboundService {
         boolean hasMaterial = materialCode != null && !materialCode.isEmpty();
         boolean hasBarcode = barcode != null && !barcode.isEmpty();
         boolean hasOrderNo = orderNo != null && !orderNo.isEmpty();
-        if (!hasMaterial && !hasBarcode && !hasOrderNo) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供至少一个查询条件（物料号/看板号/入库单号）");
-        }
 
-        // 如果指定了入库单号，先查入库单 ID，再通过 inboundId 查二维码
+        // 如果指定了入库单号，先查入库单 ID
         Long inboundId = null;
         if (hasOrderNo) {
             InboundOrder order = inboundOrderMapper.selectOne(
@@ -520,24 +517,17 @@ public class InboundServiceImpl implements InboundService {
             );
             if (order != null) {
                 inboundId = order.getId();
+            } else {
+                return InventoryTraceVO.of(new ArrayList<>());
             }
         }
 
-        // 按条件查询二维码（仅入库类型，排除出库标签）
+        // 按条件查询二维码（仅入库类型），无任何条件时返回全部
         LambdaQueryWrapper<Barcode> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Barcode::getType, "inbound");
-        if (hasMaterial) {
-            wrapper.eq(Barcode::getMaterialCode, materialCode);
-        }
-        if (hasBarcode) {
-            wrapper.eq(Barcode::getBarcode, barcode);
-        }
-        if (inboundId != null) {
-            wrapper.eq(Barcode::getInboundId, inboundId);
-        } else if (hasOrderNo) {
-            // 入库单号未匹配到任何订单，返回空列表
-            return InventoryTraceVO.of(new ArrayList<>());
-        }
+        if (hasMaterial) wrapper.eq(Barcode::getMaterialCode, materialCode);
+        if (hasBarcode) wrapper.eq(Barcode::getBarcode, barcode);
+        if (inboundId != null) wrapper.eq(Barcode::getInboundId, inboundId);
         wrapper.orderByDesc(Barcode::getCreatedAt);
 
         List<Barcode> barcodes = barcodeMapper.selectList(wrapper);

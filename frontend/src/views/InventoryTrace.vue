@@ -23,7 +23,7 @@
         <el-button type="primary" size="small" :loading="loading" @click="doQuery">
           查询
         </el-button>
-        <span class="toolbar-tip">{{ traceData.length > 0 ? `共 ${traceData.length} 条追溯记录` : '至少输入一个查询条件' }}</span>
+        <span class="toolbar-tip">{{ traceData.length > 0 ? `共 ${traceData.length} 条追溯记录` : '点击查询或直接回车查看全部' }}</span>
       </div>
       <!-- 状态统计 -->
       <div v-if="traceData.length" class="stat-row" style="margin-bottom: 16px">
@@ -40,7 +40,7 @@
       </div>
 
       <el-table :data="traceData" stripe size="small" v-loading="loading"
-        empty-text="暂无追溯数据，请尝试修改查询条件"
+        empty-text="暂无追溯数据"
         @selection-change="(rows) => selectedRows = rows">
         <el-table-column type="selection" width="40" />
         <el-table-column label="看板号" min-width="280">
@@ -129,6 +129,8 @@ onMounted(async () => {
     allMaterials.value = data.records || []
     materialOptions.value = [...allMaterials.value]
   } catch { /* */ }
+  // 页面加载即展示全部追溯记录
+  doQuery()
 })
 
 function filterMaterial(query) {
@@ -140,13 +142,6 @@ function filterMaterial(query) {
 }
 
 async function doQuery() {
-  const hasMaterial = query.materialCode.trim()
-  const hasBarcode = query.barcode.trim()
-  const hasOrderNo = query.orderNo.trim()
-  if (!hasMaterial && !hasBarcode && !hasOrderNo) {
-    ElMessage.warning('请至少输入一个查询条件')
-    return
-  }
   loading.value = true
   try {
     const data = await getInventoryTrace({
