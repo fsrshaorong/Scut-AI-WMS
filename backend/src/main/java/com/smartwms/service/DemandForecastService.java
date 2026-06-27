@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -156,9 +155,10 @@ public class DemandForecastService {
     private int[] aggregateOutWeekly(String code) {
         int[] w = new int[HISTORY_WEEKS];
         LocalDate today = LocalDate.now();
+        // 最近一周以 today 为结束日，往前推算 12 周
         for (int i = 0; i < HISTORY_WEEKS; i++) {
-            LocalDate ws = today.minusWeeks(HISTORY_WEEKS - i).with(DayOfWeek.MONDAY);
-            LocalDate we = ws.plusDays(6);
+            LocalDate we = today.minusWeeks(HISTORY_WEEKS - 1 - i);
+            LocalDate ws = we.minusDays(6);
             List<OutboundHistory> list = outboundHistoryMapper.selectList(
                 new LambdaQueryWrapper<OutboundHistory>().eq(OutboundHistory::getMaterialCode, code)
                     .ge(OutboundHistory::getCreatedAt, ws.atStartOfDay())
@@ -175,8 +175,8 @@ public class DemandForecastService {
         List<InboundOrder> orders = inboundOrderMapper.selectList(
             new LambdaQueryWrapper<InboundOrder>().eq(InboundOrder::getStatus, "已完成"));
         for (int i = 0; i < HISTORY_WEEKS; i++) {
-            LocalDate ws = today.minusWeeks(HISTORY_WEEKS - i).with(DayOfWeek.MONDAY);
-            LocalDate we = ws.plusDays(6);
+            LocalDate we = today.minusWeeks(HISTORY_WEEKS - 1 - i);
+            LocalDate ws = we.minusDays(6);
             for (InboundOrder o : orders) {
                 if (o.getCreatedAt() == null) continue;
                 LocalDate od = o.getCreatedAt().toLocalDate();

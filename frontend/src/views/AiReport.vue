@@ -333,8 +333,9 @@ function sourceLabel(s) {
 }
 .badge-lg { padding: 4px 12px; font-size: 14px; }
 .badge-success { background: #f0f9eb; color: #67c23a; }
-.badge-warn    { background: #fdf6ec; color: #e6a23c; }
+.badge-warn, .badge-warning { background: #fdf6ec; color: #e6a23c; }
 .badge-danger  { background: #fef0f0; color: #f56c6c; }
+.badge-info    { background: #ecf5ff; color: #409eff; }
 .badge-default { background: #f4f4f5; color: #909399; }
 
 @media (max-width: 768px) {
