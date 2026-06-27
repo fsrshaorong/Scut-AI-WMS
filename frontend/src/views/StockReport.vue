@@ -46,11 +46,15 @@
             <span v-else style="color:#909399">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存" width="70" align="right">
-          <template #default="{ row }">{{ row.safetyStock ?? '—' }}</template>
+        <el-table-column label="安全库存" width="80" align="right">
+          <template #default="{ row }">
+            {{ row.suggestedSafetyStock ?? '—' }}
+          </template>
         </el-table-column>
-        <el-table-column label="提前期(天)" width="75" align="center">
-          <template #default="{ row }">{{ row.leadTimeDays ?? '—' }}</template>
+        <el-table-column label="提前期" width="65" align="center">
+          <template #default="{ row }">
+            <span class="suggested-val">{{ row.suggestedLeadTimeDays ?? '—' }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="最后出库" width="90" align="center">
           <template #default="{ row }">
@@ -157,8 +161,8 @@ function doExport() {
     { key: 'stockQty', label: '当前库存' },
     { key: 'dailyConsume', label: '日均消耗' },
     { key: 'dohf', label: 'DOHF(天)' },
-    { key: 'safetyStock', label: '安全库存' },
-    { key: 'leadTimeDays', label: '提前期(天)' },
+    { key: 'suggestedSafetyStock', label: '安全库存' },
+    { key: 'suggestedLeadTimeDays', label: '提前期' },
     { key: 'lastOutboundDate', label: '最后出库' },
     { key: 'idleDays', label: '闲置天数' },
     { key: 'ruleEvaluation', label: '评级' }
