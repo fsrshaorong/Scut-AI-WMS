@@ -22,6 +22,7 @@ import com.smartwms.service.InboundService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.time.format.DateTimeFormatter;
@@ -281,8 +282,19 @@ public class InboundServiceImpl implements InboundService {
 
     @Override
     public Page<InboundOrder> page(int current, int size) {
+        return page(current, size, null, null, null, null);
+    }
+
+    @Override
+    public Page<InboundOrder> page(int current, int size, String status, String keyword, LocalDate startDate, LocalDate endDate) {
         Page<InboundOrder> page = new Page<>(current, size);
         LambdaQueryWrapper<InboundOrder> wrapper = new LambdaQueryWrapper<>();
+        if (status != null && !status.isBlank()) wrapper.eq(InboundOrder::getStatus, status);
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.and(w -> w.like(InboundOrder::getOrderNo, keyword).or().like(InboundOrder::getSupplierCode, keyword));
+        }
+        if (startDate != null) wrapper.ge(InboundOrder::getCreatedAt, startDate.atStartOfDay());
+        if (endDate != null) wrapper.le(InboundOrder::getCreatedAt, endDate.plusDays(1).atStartOfDay());
         wrapper.orderByDesc(InboundOrder::getCreatedAt);
         return inboundOrderMapper.selectPage(page, wrapper);
     }

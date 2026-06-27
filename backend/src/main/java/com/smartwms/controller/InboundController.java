@@ -6,10 +6,13 @@
  */
 package com.smartwms.controller;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.springframework.format.annotation.DateTimeFormat;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartwms.common.Result;
@@ -41,8 +44,12 @@ public class InboundController {
     @GetMapping("/orders")
     public Result<Page<InboundOrder>> page(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return Result.success(inboundService.page(page, size));
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return Result.success(inboundService.page(page, size, status, keyword, startDate, endDate));
     }
 
     /**

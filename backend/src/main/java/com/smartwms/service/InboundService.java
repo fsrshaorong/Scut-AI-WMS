@@ -15,6 +15,7 @@ import com.smartwms.dto.ScanInboundRequest;
 import com.smartwms.dto.ScanInboundVO;
 import com.smartwms.entity.InboundOrder;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public interface InboundService {
@@ -33,6 +34,8 @@ public interface InboundService {
      * 分页查询入库单列表。
      */
     Page<InboundOrder> page(int current, int size);
+
+    Page<InboundOrder> page(int current, int size, String status, String keyword, LocalDate startDate, LocalDate endDate);
 
     /**
      * 查询入库单详情（含明细行）。
