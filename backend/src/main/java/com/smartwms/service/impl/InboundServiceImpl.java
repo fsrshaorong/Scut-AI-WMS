@@ -347,15 +347,23 @@ public class InboundServiceImpl implements InboundService {
                 barcodeMapper.updateById(bc);
             }
 
-            // 增加库存
+            // 增加库存（库存记录不存在时自动创建）
             Inventory inv = inventoryMapper.selectOne(
                     new LambdaQueryWrapper<Inventory>()
                             .eq(Inventory::getMaterialCode, detail.getMaterialCode())
             );
             if (inv != null) {
-                int oldQty = inv.getStockQty();
-                inv.setStockQty(oldQty + actualQty);
+                inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + actualQty);
                 inventoryMapper.updateById(inv);
+            } else {
+                inv = new Inventory();
+                inv.setMaterialCode(detail.getMaterialCode());
+                inv.setStockQty(actualQty);
+                inv.setMinStockDays(3);
+                inv.setMaxStockDays(15);
+                inv.setSafetyStock(0);
+                inv.setLeadTimeDays(7);
+                inventoryMapper.insert(inv);
             }
         }
 
@@ -778,14 +786,23 @@ public class InboundServiceImpl implements InboundService {
             }
         }
 
-        // 增加库存
+        // 增加库存（库存记录不存在时自动创建）
         Inventory inv = inventoryMapper.selectOne(
                 new LambdaQueryWrapper<Inventory>()
                         .eq(Inventory::getMaterialCode, barcode.getMaterialCode())
         );
         if (inv != null) {
-            inv.setStockQty(inv.getStockQty() + actualQty);
+            inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + actualQty);
             inventoryMapper.updateById(inv);
+        } else {
+            inv = new Inventory();
+            inv.setMaterialCode(barcode.getMaterialCode());
+            inv.setStockQty(actualQty);
+            inv.setMinStockDays(3);
+            inv.setMaxStockDays(15);
+            inv.setSafetyStock(0);
+            inv.setLeadTimeDays(7);
+            inventoryMapper.insert(inv);
         }
 
         return ScanInboundVO.from(barcode, detail, true);

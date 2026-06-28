@@ -50,6 +50,7 @@ public class InventoryTraceVO {
         private Integer packCapacity;
         private Integer planQty;
         private Integer actualQty;
+        private Integer remainingQty;
         private String inboundCreatedAt;
         private String outboundOrderNo;
         private String outboundAt;
@@ -65,6 +66,7 @@ public class InventoryTraceVO {
             item.setMaterialCode(bc.getMaterialCode());
             item.setSupplierCode(bc.getSupplierCode());
             item.setStatus(bc.getStatus());
+            item.setRemainingQty(bc.getRemainingQty());
             item.setBarcodeCreatedAt(bc.getCreatedAt() != null
                     ? bc.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             item.setBarcodeUpdatedAt(bc.getUpdatedAt() != null
@@ -110,6 +112,9 @@ public class InventoryTraceVO {
 
         public Integer getActualQty() { return actualQty; }
         public void setActualQty(Integer actualQty) { this.actualQty = actualQty; }
+
+        public Integer getRemainingQty() { return remainingQty; }
+        public void setRemainingQty(Integer remainingQty) { this.remainingQty = remainingQty; }
 
         public String getInboundCreatedAt() { return inboundCreatedAt; }
         public void setInboundCreatedAt(String inboundCreatedAt) { this.inboundCreatedAt = inboundCreatedAt; }

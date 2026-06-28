@@ -37,7 +37,9 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="freezeType" label="封存类型" width="100" align="center" />
+        <el-table-column label="封存类型" width="100" align="center">
+          <template #default="{ row }">{{ freezeTypeLabel(row.freezeType) }}</template>
+        </el-table-column>
         <el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip />
         <el-table-column prop="operator" label="操作人" width="100" />
         <el-table-column prop="freezeTime" label="封存时间" width="170" />
@@ -249,6 +251,9 @@ async function handleUnseal(row) {
   } catch (err) {
     if (err !== 'cancel' && err?.message) ElMessage.error(err.message)
   }
+}
+function freezeTypeLabel(t) {
+  return { 'QUALITY': '质量问题', 'ADMIN': '管理封存', 'OTHER': '其他' }[t] || t || '—'
 }
 </script>
 

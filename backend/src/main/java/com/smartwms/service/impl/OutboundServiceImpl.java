@@ -400,7 +400,10 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 修改出库单：退回已拣库存，删除旧出库标签，重新执行整箱拣选。
+     * 修改出库单：退回已拣库存，恢复已确认扣减的库存，删除旧明细，重新执行整箱拣选。
+     *
+     * @author Focus
+     * @date 2026-06-28
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -410,8 +413,28 @@ public class OutboundServiceImpl implements OutboundService {
         if ("已完成".equals(order.getStatus()))
             throw new BusinessException(ErrorCode.BAD_REQUEST, "已完成的出库单不可修改");
 
-        // 退回库存：将已拣的入库二维码恢复为在库
+        // 保存旧明细，用于恢复已确认扣减的库存
+        List<OutboundDetail> oldDetails = outboundDetailMapper.selectList(
+                new LambdaQueryWrapper<OutboundDetail>().eq(OutboundDetail::getOutboundId, id)
+        );
+
+        // 退回条码状态（不恢复库存，拣选阶段未扣库存）
         rollbackPick(order.getId());
+
+        // 恢复已确认出库扣减的库存（仅"部分完成"场景需要，未完成订单 actualQty=0）
+        for (OutboundDetail detail : oldDetails) {
+            int confirmedQty = detail.getActualQty() != null ? detail.getActualQty() : 0;
+            if (confirmedQty > 0) {
+                Inventory inv = inventoryMapper.selectOne(
+                        new LambdaQueryWrapper<Inventory>().eq(Inventory::getMaterialCode, detail.getMaterialCode())
+                );
+                if (inv != null) {
+                    inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + confirmedQty);
+                    inventoryMapper.updateById(inv);
+                }
+            }
+        }
+
         // 删除旧明细和流水（一码到底：不删二维码，二维码由 rollbackPick 恢复）
         outboundDetailMapper.delete(new LambdaQueryWrapper<OutboundDetail>()
                 .eq(OutboundDetail::getOutboundId, id));
@@ -429,7 +452,8 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 删除出库单：退回库存，删除明细和流水。
+     * 删除出库单：退回条码状态，删除明细和流水。
+     * 仅"未完成"状态可删除，该状态下库存未被扣减，因此无需恢复库存。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -439,6 +463,7 @@ public class OutboundServiceImpl implements OutboundService {
         if (!"未完成".equals(order.getStatus()))
             throw new BusinessException(ErrorCode.BAD_REQUEST, "仅未完成状态的出库单可删除");
 
+        // 只恢复条码状态，不恢复库存（拣选阶段未扣库存）
         rollbackPick(id);
         outboundDetailMapper.delete(new LambdaQueryWrapper<OutboundDetail>()
                 .eq(OutboundDetail::getOutboundId, id));
@@ -448,7 +473,10 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     /**
-     * 退回已拣库存：通过出库流水找到被拣选的入库二维码，恢复为「在库」并退还扣除量。
+     * 退回已拣库存：仅恢复条码状态和 remainingQty，不恢复库存。
+     * 因为拣选阶段（createDetailAndPick）不扣库存，所以回退时也不应加回库存。
+     * 库存恢复由调用方根据订单确认情况自行处理。
+     *
      * 兼容整箱全取（待出库→在库，remainingQty 不变）、部分拆箱（在库，remainingQty 加回扣除量）
      * 和拆分二维码（删除拆分码，原箱恢复）。
      *
@@ -476,7 +504,6 @@ public class OutboundServiceImpl implements OutboundService {
             // 拆分二维码（barcode 含 _S 后缀）：回退时直接删除
             if (inboundBc.getBarcode() != null && inboundBc.getBarcode().contains("_S")) {
                 splitBarcodeIdsToDelete.add(inboundBc.getId());
-                // 库存由该拆分对应的原箱流水恢复，此处不重复加回
                 continue;
             }
 
@@ -490,11 +517,7 @@ public class OutboundServiceImpl implements OutboundService {
                 inboundBc.setRemainingQty(currentRemaining + deductQty);
                 barcodeMapper.updateById(inboundBc);
             }
-
-            // 恢复库存
-            Inventory inv = loadInventory(inboundBc.getMaterialCode());
-            inv.setStockQty((inv.getStockQty() != null ? inv.getStockQty() : 0) + deductQty);
-            inventoryMapper.updateById(inv);
+            // 注意：拣选阶段不扣库存，此处不恢复库存，避免凭空增加库存
         }
 
         // 删除拆分二维码
@@ -804,6 +827,9 @@ public class OutboundServiceImpl implements OutboundService {
     /**
      * 扫码出库（一码到底）：直接扫描入库二维码（WMS|...）核销出库。
      * 仅接受状态为「待出库」的入库二维码。
+     *
+     * @author Focus
+     * @date 2026-06-28
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -838,6 +864,21 @@ public class OutboundServiceImpl implements OutboundService {
 
         String materialCode = inboundBc.getMaterialCode();
         int boxQty = inboundBc.getRemainingQty() != null ? inboundBc.getRemainingQty() : 0;
+
+        // 扣减库存（与 confirm 逻辑一致，扫码出库即确认出库）
+        Inventory inv = inventoryMapper.selectOne(
+                new LambdaQueryWrapper<Inventory>().eq(Inventory::getMaterialCode, materialCode)
+        );
+        if (inv == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "物料 " + materialCode + " 尚未建立库存记录");
+        }
+        int stockQty = inv.getStockQty() != null ? inv.getStockQty() : 0;
+        if (stockQty < boxQty) {
+            throw new BusinessException(ErrorCode.STOCK_INSUFFICIENT,
+                    "库存不足：物料 " + materialCode + " 需要 " + boxQty + " 件，当前仅剩 " + stockQty + " 件");
+        }
+        inv.setStockQty(stockQty - boxQty);
+        inventoryMapper.updateById(inv);
 
         // 标记为已出库
         inboundBc.setStatus("已出库");
