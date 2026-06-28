@@ -693,6 +693,12 @@ public class OutboundServiceImpl implements OutboundService {
                 ib.setStatus("待出库");
                 barcodeMapper.updateById(ib);
                 createOutboundHistory(order, detail, materialCode, ib, ib, deductQty);
+            } else if (deductQty < currentRemaining) {
+                // ===== 部分箱未取完：扣减后留在库，下次继续优先使用 =====
+                ib.setRemainingQty(currentRemaining - deductQty);
+                // 保持"在库"状态不变
+                barcodeMapper.updateById(ib);
+                createOutboundHistory(order, detail, materialCode, ib, ib, deductQty);
             } else {
                 // ===== 部分箱全取：remainingQty 归零，标记为待出库 =====
                 ib.setRemainingQty(0);
